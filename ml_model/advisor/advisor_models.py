@@ -1,0 +1,329 @@
+"""
+=========================================================
+Advisor Models
+=========================================================
+
+Data models used by the maize disease advisor service.
+
+The advisor is knowledge-base driven and supports:
+    - English
+    - Amharic
+
+The models separate:
+    - Disease diagnosis
+    - Advisory information
+    - Localized responses
+    - Advisor requests and responses
+
+Author : Nigusu Tigabu
+Project: AI Maize Disease Detection System
+=========================================================
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+
+# =========================================================
+# ADVISOR REQUEST
+# =========================================================
+
+@dataclass
+class AdvisorRequest:
+    """
+    Represents a request made to the advisor service.
+
+    Parameters
+    ----------
+    disease_class_name:
+        Model disease class, for example "Blight".
+
+    language:
+        Requested response language.
+        Supported values:
+            en = English
+            am = Amharic
+
+    include_sources:
+        Whether source information should be included.
+
+    include_diagnosis:
+        Whether diagnosis information should be included.
+
+    """
+
+    disease_class_name: str
+
+    language: str = "en"
+
+    include_sources: bool = True
+
+    include_diagnosis: bool = True
+
+    def normalized_language(self) -> str:
+        """
+        Return normalized language code.
+        """
+
+        return self.language.strip().lower()
+
+
+# =========================================================
+# DIAGNOSIS SUMMARY
+# =========================================================
+
+@dataclass
+class DiagnosisSummary:
+    """
+    Represents the diagnosis information passed
+    from the AI prediction layer to the advisor.
+    """
+
+    class_id: int
+
+    class_name: str
+
+    display_name: str
+
+    scientific_name: str | None
+
+    confidence: float
+
+    model: str | None = None
+
+    prediction_time: float | None = None
+
+    status: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Convert diagnosis summary to a dictionary.
+        """
+
+        return {
+            "class_id": self.class_id,
+            "class_name": self.class_name,
+            "display_name": self.display_name,
+            "scientific_name": self.scientific_name,
+            "confidence": self.confidence,
+            "model": self.model,
+            "prediction_time": self.prediction_time,
+            "status": self.status,
+        }
+
+
+# =========================================================
+# LOCALIZED ADVICE
+# =========================================================
+
+@dataclass
+class LocalizedAdvice:
+    """
+    Represents disease advice in one language.
+    """
+
+    disease: str
+
+    scientific_name: str | None
+
+    description: str
+
+    symptoms: list[str] = field(
+        default_factory=list
+    )
+
+    causes: list[str] = field(
+        default_factory=list
+    )
+
+    favorable_conditions: list[str] = field(
+        default_factory=list
+    )
+
+    prevention: list[str] = field(
+        default_factory=list
+    )
+
+    management: list[str] = field(
+        default_factory=list
+    )
+
+    severity: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Convert localized advice to a dictionary.
+        """
+
+        return {
+            "disease": self.disease,
+            "scientific_name": self.scientific_name,
+            "description": self.description,
+            "symptoms": list(self.symptoms),
+            "causes": list(self.causes),
+            "favorable_conditions": list(
+                self.favorable_conditions
+            ),
+            "prevention": list(
+                self.prevention
+            ),
+            "management": list(
+                self.management
+            ),
+            "severity": self.severity,
+        }
+
+
+# =========================================================
+# SOURCE
+# =========================================================
+
+@dataclass
+class AdvisorSource:
+    """
+    Represents a knowledge-base source.
+    """
+
+    title: str
+
+    organization: str
+
+    source_type: str = ""
+
+    url: str = ""
+
+    year: int | None = None
+
+    notes: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Convert source information to a dictionary.
+        """
+
+        return {
+            "title": self.title,
+            "organization": self.organization,
+            "source_type": self.source_type,
+            "url": self.url,
+            "year": self.year,
+            "notes": self.notes,
+        }
+
+
+# =========================================================
+# ADVISOR RESPONSE
+# =========================================================
+
+@dataclass
+class AdvisorResponse:
+    """
+    Complete response generated by the advisor service.
+
+    The advisor does not invent agricultural information.
+    It returns information retrieved from the structured
+    knowledge base.
+    """
+
+    success: bool
+
+    language: str
+
+    disease: str
+
+    advice: LocalizedAdvice
+
+    diagnosis: DiagnosisSummary | None = None
+
+    sources: list[AdvisorSource] = field(
+        default_factory=list
+    )
+
+    warnings: list[str] = field(
+        default_factory=list
+    )
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Convert advisor response to a dictionary.
+        """
+
+        result: dict[str, Any] = {
+
+            "success": self.success,
+
+            "language": self.language,
+
+            "disease": self.disease,
+
+            "advice": self.advice.to_dict(),
+
+        }
+
+        if self.diagnosis is not None:
+
+            result["diagnosis"] = (
+                self.diagnosis.to_dict()
+            )
+
+        if self.sources:
+
+            result["sources"] = [
+
+                source.to_dict()
+
+                for source in self.sources
+            ]
+
+        if self.warnings:
+
+            result["warnings"] = list(
+                self.warnings
+            )
+
+        return result
+
+
+# =========================================================
+# ADVISOR ERROR
+# =========================================================
+
+@dataclass
+class AdvisorErrorResponse:
+    """
+    Standardized error response for the advisor.
+    """
+
+    success: bool = False
+
+    language: str = "en"
+
+    error_code: str = ""
+
+    message: str = ""
+
+    details: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Convert error response to a dictionary.
+        """
+
+        result: dict[str, Any] = {
+
+            "success": self.success,
+
+            "language": self.language,
+
+            "error_code": self.error_code,
+
+            "message": self.message,
+        }
+
+        if self.details:
+
+            result["details"] = self.details
+
+        return result

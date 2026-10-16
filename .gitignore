@@ -1,8 +1,69 @@
-venv/
-__pycache__/
-*.pyc
+﻿# Environment variables and secrets
+.env
+.env.*
+!.env.example
 
+# Python virtual environments and generated files
+venv/
+.venv/
+env/
+.venv-*/
+**/.venv/
+**/.venv-*/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# TensorFlow.js conversion environments
+.venv-tfjs-convert/
+ml_model/.tfjs-convert-venv/
+
+# Node.js dependencies and build outputs
+node_modules/
+**/node_modules/
+dist/
+build/
+coverage/
+
+# Datasets, uploads, logs, and generated reports
 ml_model/dataset/
 ml_model/models/*.h5
-
+ml_model/explainability/outputs/
 reports/
+uploads/
+logs/
+*.log
+
+# Local databases and private keys
+*.sqlite
+*.sqlite3
+*.db
+*.pem
+*.key
+*.p12
+
+# OS/editor temporary files
+.DS_Store
+Thumbs.db
+
+# Local backup files
+.gitignore.backup
+
+# Local backup copies (keep these out of Git)
+*.bak
+*.backup
+
+# Local PowerShell analysis cache
+/Microsoft/Windows/PowerShell/ModuleAnalysisCache
+
+# Empty local artifacts
+/0
+/curl
+/python
+
+# Local diagnostic scripts and machine-specific project listing
+/python_tls_check.py
+/sms_tls_check.py
+/project_structure.txt

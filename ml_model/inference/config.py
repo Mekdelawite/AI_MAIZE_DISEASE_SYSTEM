@@ -6,7 +6,7 @@ Configuration File
 This module stores all configurable values used by the
 AI inference system.
 
-Author : Nigusu Tgabu
+Author : Nigusu Tgabu,Rediet Tsega,Samueal Admasu
 Project: AI Maize Disease Detection and Advisory System
 =========================================================
 """

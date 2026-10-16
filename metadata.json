@@ -1,0 +1,6 @@
+{
+  "name": "MaizeCare AI",
+  "description": "Intelligent maize disease detection and agricultural advisory platform for Ethiopian smallholder farmers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

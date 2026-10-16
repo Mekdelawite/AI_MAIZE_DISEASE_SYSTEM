@@ -3,73 +3,105 @@
 Image Preprocessing Module
 =========================================================
 
-Prepares validated images for AI model inference.
+This module prepares images for MobileNetV2 inference.
 
-Author : Nigusu Tigabu
-Project: AI-Based Maize Disease Detection System
+Responsibilities:
+- Load image
+- Convert to RGB
+- Resize
+- Convert to NumPy array
+- Normalize
+- Add batch dimension
+
+Author : Nigusu Tgabu
+Project: AI Maize Disease Detection System
 =========================================================
 """
 
+from pathlib import Path
+from typing import Tuple
+
 import numpy as np
+import tensorflow as tf
 from PIL import Image
 
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+from config import IMAGE_SIZE
+from validator import ImageValidator
 
 
 class ImagePreprocessor:
     """
-    Handles image preprocessing for MobileNetV2 model.
+    Handles image preprocessing for AI inference.
     """
 
-    def __init__(self, target_size=(224, 224)):
-        self.target_size = target_size
+    @staticmethod
+    def load_image(image_path: str) -> Image.Image:
+        """
+        Load image after validation.
+        """
 
-    def load_image(self, image_path):
-        """
-        Load image and convert to RGB.
-        """
-        image = Image.open(image_path).convert("RGB")
+        valid_path = ImageValidator.validate(image_path)
+
+        image = Image.open(valid_path)
+
+        image = image.convert("RGB")
+
         return image
 
-    def resize_image(self, image):
+    @staticmethod
+    def resize(image: Image.Image) -> Image.Image:
         """
         Resize image to model input size.
         """
-        return image.resize(self.target_size)
 
-    def to_array(self, image):
+        return image.resize(IMAGE_SIZE)
+
+    @staticmethod
+    def image_to_array(image: Image.Image) -> np.ndarray:
         """
-        Convert PIL image to numpy array.
-        """
-        return np.array(image)
-
-    def preprocess(self, image_path):
-        """
-        Full preprocessing pipeline.
-
-        Parameters
-        ----------
-        image_path : str
-
-        Returns
-        -------
-        np.ndarray
-            Preprocessed image ready for model prediction.
+        Convert PIL image to NumPy array.
         """
 
-        # 1. Load image
-        image = self.load_image(image_path)
+        return np.asarray(image, dtype=np.float32)
 
-        # 2. Resize image
-        image = self.resize_image(image)
+    @staticmethod
+    def normalize(image_array: np.ndarray) -> np.ndarray:
+        """
+        Apply MobileNetV2 preprocessing.
+        """
 
-        # 3. Convert to array
-        image_array = self.to_array(image)
+        return tf.keras.applications.mobilenet_v2.preprocess_input(
+            image_array
+        )
 
-        # 4. Expand dimensions (1, 224, 224, 3)
-        image_array = np.expand_dims(image_array, axis=0)
+    @staticmethod
+    def add_batch_dimension(image_array: np.ndarray) -> np.ndarray:
+        """
+        Convert shape
 
-        # 5. Apply MobileNetV2 preprocessing
-        image_array = preprocess_input(image_array)
+        (224,224,3)
+
+        into
+
+        (1,224,224,3)
+        """
+
+        return np.expand_dims(image_array, axis=0)
+
+    @classmethod
+    def preprocess(cls, image_path: str) -> np.ndarray:
+        """
+        Complete preprocessing pipeline.
+        """
+
+        image = cls.load_image(image_path)
+
+        image = cls.resize(image)
+
+        image_array = cls.image_to_array(image)
+
+        image_array = cls.normalize(image_array)
+
+        image_array = cls.add_batch_dimension(image_array)
 
         return image_array

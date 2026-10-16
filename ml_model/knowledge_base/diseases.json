@@ -1,0 +1,408 @@
+{
+    "metadata": {
+        "name": "AI Maize Disease Knowledge Base",
+        "version": "1.0.0",
+        "crop": "Maize",
+        "languages": [
+            "en",
+            "am"
+        ],
+        "description": "Bilingual knowledge base for maize disease diagnosis and advisory support.",
+        "knowledge_policy": {
+            "source_based": true,
+            "expert_validation_required": true,
+            "runtime_translation_not_allowed": true
+        }
+    },
+
+    "diseases": [
+        {
+            "class_id": 0,
+            "class_name": "Blight",
+
+            "display_name_en": "Northern Leaf Blight",
+            "display_name_am": "የሰሜን ቅጠል በሽታ",
+
+            "scientific_name": "Exserohilum turcicum",
+
+            "english": {
+                "description": "Northern Leaf Blight is a fungal disease of maize that primarily affects leaves and can reduce photosynthetic activity and yield when disease development is severe.",
+
+                "symptoms": [
+                    "Long, elongated gray-green to tan lesions can develop on maize leaves.",
+                    "Lesions may enlarge and become more visible as the disease progresses.",
+                    "Severely affected leaves may lose functional green tissue."
+                ],
+
+                "causes": [
+                    "The disease is caused by the fungus Exserohilum turcicum.",
+                    "The pathogen can survive on infected crop residues and produce new infections under favorable conditions."
+                ],
+
+                "favorable_conditions": [
+                    "Extended periods of leaf wetness can favor disease development.",
+                    "Moderate temperatures and humid conditions can support infection and disease progression."
+                ],
+
+                "prevention": [
+                    "Use healthy and appropriate maize planting material.",
+                    "Reduce the amount of infected crop residue where practical.",
+                    "Use disease management practices appropriate for the local production system."
+                ],
+
+                "management": [
+                    "Monitor maize fields regularly for developing leaf lesions.",
+                    "Use resistant or tolerant varieties where suitable varieties are available.",
+                    "Consider locally recommended disease-management practices when disease pressure is high."
+                ],
+
+                "severity": "Moderate to High"
+            },
+
+            "amharic": {
+                "description": "የሰሜን ቅጠል በሽታ በቆሎን የሚያጠቃ የፈንገስ በሽታ ሲሆን በተለይም ቅጠሎችን ይጎዳል። በሽታው በጣም ከበደ ጊዜ የተክሉን የፎቶሲንተሲስ አቅም እና ምርት ሊቀንስ ይችላል።",
+
+                "symptoms": [
+                    "በቆሎ ቅጠሎች ላይ ረዥም እና የተራዘሙ ግራጫ-አረንጓዴ ወይም ቡናማ ነጠብጣቦች ሊታዩ ይችላሉ።",
+                    "በሽታው ሲስፋፋ የቅጠሉ ጉዳት የበለጠ ሊታይ ይችላል።",
+                    "በጣም የተጎዱ ቅጠሎች ጤናማ አረንጓዴ ክፍላቸውን ሊያጡ ይችላሉ።"
+                ],
+
+                "causes": [
+                    "በሽታው Exserohilum turcicum በተባለ ፈንገስ ይከሰታል።",
+                    "የበሽታው አምጪ በተበከለ የሰብል ቅሪት ላይ ሊቆይ ይችላል።"
+                ],
+
+                "favorable_conditions": [
+                    "ለረጅም ጊዜ የቅጠል እርጥበት መኖር በሽታውን ሊያበረታታ ይችላል።",
+                    "መካከለኛ ሙቀትና እርጥበት ያለው አየር ሁኔታ የበሽታውን ስርጭት ሊያግዝ ይችላል።"
+                ],
+
+                "prevention": [
+                    "ጤናማና ለአካባቢው ተስማሚ የበቆሎ ዘር መጠቀም።",
+                    "በተቻለ መጠን የተበከለ የሰብል ቅሪትን መቆጣጠር።",
+                    "ለአካባቢው የሚመከሩ የበሽታ መከላከያ ዘዴዎችን መጠቀም።"
+                ],
+
+                "management": [
+                    "በእርሻው ላይ የበሽታ ምልክቶችን በመደበኛነት መከታተል።",
+                    "ተስማሚ የሆኑ በሽታን የሚቋቋሙ ወይም የሚችሉ ዝርያዎችን መጠቀም።",
+                    "በሽታው ከፍተኛ ሲሆን በአካባቢው የተመከሩ የበሽታ አስተዳደር ዘዴዎችን መከተል።"
+                ],
+
+                "severity": "መካከለኛ እስከ ከፍተኛ"
+            },
+
+            "sources": [
+                {
+                    "title": "Turcicum Leaf Blight and Common Rust of Maize in Ethiopia",
+                    "organization": "Wiley / Agrosystems, Geosciences & Environment",
+                    "source_type": "Peer-reviewed research",
+                    "url": "https://doi.org/10.1002/agg2.20407",
+                    "year": 2025,
+                    "notes": "Ethiopia-specific evidence on maize foliar diseases."
+                }
+            ],
+
+            "validation": {
+                "status": "pending_expert_review",
+                "method": "literature_review_and_expert_validation",
+                "expert_validated": false,
+                "reviewer": null,
+                "date": null,
+                "notes": "Content must be reviewed by an agricultural expert before being treated as fully validated advisory knowledge."
+            }
+        },
+
+        {
+            "class_id": 1,
+            "class_name": "Common_Rust",
+
+            "display_name_en": "Common Rust",
+            "display_name_am": "የበቆሎ የዝገት በሽታ",
+
+            "scientific_name": "Puccinia sorghi",
+
+            "english": {
+                "description": "Common Rust is a fungal disease of maize that produces rust-colored structures on leaves and can reduce plant performance when infection is severe.",
+
+                "symptoms": [
+                    "Small rust-colored pustules can appear on maize leaves.",
+                    "Pustules may occur on both leaf surfaces.",
+                    "Severe infection can result in extensive leaf damage."
+                ],
+
+                "causes": [
+                    "The disease is caused by the fungus Puccinia sorghi.",
+                    "The pathogen produces spores that can spread to healthy plants."
+                ],
+
+                "favorable_conditions": [
+                    "Cool temperatures can favor common rust development.",
+                    "High humidity and extended leaf wetness can support infection."
+                ],
+
+                "prevention": [
+                    "Use resistant or tolerant varieties when available.",
+                    "Maintain good field monitoring.",
+                    "Follow locally recommended maize disease-management practices."
+                ],
+
+                "management": [
+                    "Inspect leaves regularly for rust-colored pustules.",
+                    "Use suitable resistant varieties where recommended.",
+                    "When necessary, follow locally approved management recommendations."
+                ],
+
+                "severity": "Low to High"
+            },
+
+            "amharic": {
+                "description": "የበቆሎ የዝገት በሽታ በቅጠሎች ላይ የዝገት ቀለም ያላቸው ነጠብጣቦችን የሚያመጣ የፈንገስ በሽታ ነው።",
+
+                "symptoms": [
+                    "በበቆሎ ቅጠሎች ላይ ትንንሽ የዝገት ቀለም ያላቸው ነጠብጣቦች ሊታዩ ይችላሉ።",
+                    "እነዚህ ነጠብጣቦች በቅጠሉ ሁለቱም ገጽታዎች ላይ ሊታዩ ይችላሉ።",
+                    "ከባድ የበሽታ ጉዳት ሰፊ የቅጠል ጉዳትን ሊያስከትል ይችላል።"
+                ],
+
+                "causes": [
+                    "በሽታው Puccinia sorghi በተባለ ፈንገስ ይከሰታል።",
+                    "የበሽታው አምጪ ወደ ጤናማ ተክሎች ሊሰራጩ የሚችሉ ስፖሮችን ያመነጫል።"
+                ],
+
+                "favorable_conditions": [
+                    "ቀዝቃዛ የሙቀት ሁኔታ የዝገት በሽታን ሊያበረታታ ይችላል።",
+                    "ከፍተኛ እርጥበትና ለረጅም ጊዜ የቅጠል እርጥበት መኖር በሽታውን ሊያግዝ ይችላል።"
+                ],
+
+                "prevention": [
+                    "ተስማሚ የሆኑ በሽታን የሚቋቋሙ ዝርያዎችን መጠቀም።",
+                    "የእርሻውን ሁኔታ በመደበኛነት መከታተል።",
+                    "በአካባቢው የተመከሩ የበሽታ አስተዳደር ዘዴዎችን መከተል።"
+                ],
+
+                "management": [
+                    "ቅጠሎችን በየጊዜው በመመልከት የዝገት ቀለም ያላቸውን ነጠብጣቦች መፈለግ።",
+                    "ተስማሚ የሆኑ ተቋቋሚ ዝርያዎችን መጠቀም።",
+                    "አስፈላጊ ሲሆን በአካባቢው የተፈቀዱ የበሽታ አስተዳደር ምክሮችን መከተል።"
+                ],
+
+                "severity": "ዝቅተኛ እስከ ከፍተኛ"
+            },
+
+            "sources": [
+                {
+                    "title": "Common Rust of Corn",
+                    "organization": "University of Kentucky Integrated Pest Management",
+                    "source_type": "Agricultural extension",
+                    "url": "https://ipm.mgcafe.uky.edu/content/common-rust-corn",
+                    "year": null,
+                    "notes": "Disease identification and favorable environmental conditions."
+                }
+            ],
+
+            "validation": {
+                "status": "pending_expert_review",
+                "method": "literature_review_and_expert_validation",
+                "expert_validated": false,
+                "reviewer": null,
+                "date": null,
+                "notes": "Content must be reviewed by an agricultural expert before being treated as fully validated advisory knowledge."
+            }
+        },
+
+        {
+            "class_id": 2,
+            "class_name": "Gray_Leaf_Spot",
+
+            "display_name_en": "Gray Leaf Spot",
+            "display_name_am": "የግራጫ ቅጠል ነጠብጣብ በሽታ",
+
+            "scientific_name": "Cercospora zeae-maydis",
+
+            "english": {
+                "description": "Gray Leaf Spot is a fungal disease of maize that primarily affects leaves and can reduce photosynthetic area and yield when disease development is severe.",
+
+                "symptoms": [
+                    "Gray to tan rectangular lesions can develop on maize leaves.",
+                    "Lesions can expand along the leaf surface.",
+                    "Severe disease can cause substantial loss of green leaf area."
+                ],
+
+                "causes": [
+                    "The disease is caused by the fungus Cercospora zeae-maydis.",
+                    "The pathogen can survive in infected crop residue."
+                ],
+
+                "favorable_conditions": [
+                    "Warm and humid conditions can favor disease development.",
+                    "Extended periods of leaf wetness can support infection.",
+                    "Crop residue can contribute to pathogen survival between seasons."
+                ],
+
+                "prevention": [
+                    "Use resistant or tolerant varieties where available.",
+                    "Manage infected crop residue appropriately.",
+                    "Monitor fields regularly for early symptoms."
+                ],
+
+                "management": [
+                    "Scout fields regularly for developing lesions.",
+                    "Use resistant or tolerant varieties where suitable.",
+                    "Follow locally recommended management practices when disease pressure is high."
+                ],
+
+                "severity": "Moderate to High"
+            },
+
+            "amharic": {
+                "description": "የግራጫ ቅጠል ነጠብጣብ በሽታ በበቆሎ ቅጠሎች ላይ በብዛት የሚታይ የፈንገስ በሽታ ነው። ከባድ ሲሆን የተክሉን አረንጓዴ ቅጠል አካባቢ በመቀነስ ምርትን ሊቀንስ ይችላል።",
+
+                "symptoms": [
+                    "በበቆሎ ቅጠሎች ላይ ግራጫ ወይም ቡናማ የሆኑ ረዥም ወይም አራት ማዕዘን የሚመስሉ ጉዳቶች ሊታዩ ይችላሉ።",
+                    "የቅጠሉ ጉዳት በጊዜ ሂደት ሊሰፋ ይችላል።",
+                    "ከባድ በሽታ የቅጠሉን አረንጓዴ ክፍል በከፍተኛ ሁኔታ ሊቀንስ ይችላል።"
+                ],
+
+                "causes": [
+                    "በሽታው Cercospora zeae-maydis በተባለ ፈንገስ ይከሰታል።",
+                    "የበሽታው አምጪ በተበከለ የሰብል ቅሪት ላይ ሊቆይ ይችላል።"
+                ],
+
+                "favorable_conditions": [
+                    "ሞቃታማና እርጥበት ያለው ሁኔታ የበሽታውን እድገት ሊያበረታታ ይችላል።",
+                    "ለረጅም ጊዜ የቅጠል እርጥበት መኖር በሽታውን ሊያግዝ ይችላል።",
+                    "የሰብል ቅሪት የበሽታው አምጪ ከወቅት ወደ ወቅት እንዲቆይ ሊያግዝ ይችላል።"
+                ],
+
+                "prevention": [
+                    "በሽታን የሚቋቋሙ ወይም የሚችሉ ዝርያዎችን መጠቀም።",
+                    "የተበከለ የሰብል ቅሪትን በተገቢው መንገድ መቆጣጠር።",
+                    "የእርሻውን ሁኔታ በየጊዜው መከታተል።"
+                ],
+
+                "management": [
+                    "ቅጠሎችን በየጊዜው በመመልከት የበሽታውን ምልክቶች በቀድሞ ለመለየት መሞከር።",
+                    "ተስማሚ የሆኑ ተቋቋሚ ዝርያዎችን መጠቀም።",
+                    "የበሽታው ጫና ከፍተኛ ሲሆን በአካባቢው የተመከሩ የአስተዳደር ዘዴዎችን መከተል።"
+                ],
+
+                "severity": "መካከለኛ እስከ ከፍተኛ"
+            },
+
+            "sources": [
+                {
+                    "title": "Gray Leaf Spot of Corn",
+                    "organization": "University of Kentucky Integrated Pest Management",
+                    "source_type": "Agricultural extension",
+                    "url": "https://ipm.mgcafe.uky.edu/content/gray-leaf-spot-corn",
+                    "year": null,
+                    "notes": "Disease biology, symptoms, and environmental conditions."
+                },
+                {
+                    "title": "Gray Leaf Spot Disease Management Research in Ethiopia",
+                    "organization": "Ethiopian Journal of Agricultural Sciences",
+                    "source_type": "Peer-reviewed research",
+                    "url": "https://journals.ju.edu.et/index.php/ejast/article/view/889",
+                    "year": null,
+                    "notes": "Ethiopia-specific disease management research."
+                }
+            ],
+
+            "validation": {
+                "status": "pending_expert_review",
+                "method": "literature_review_and_expert_validation",
+                "expert_validated": false,
+                "reviewer": null,
+                "date": null,
+                "notes": "Content must be reviewed by an agricultural expert before being treated as fully validated advisory knowledge."
+            }
+        },
+
+        {
+            "class_id": 3,
+            "class_name": "Healthy",
+
+            "display_name_en": "Healthy Maize",
+            "display_name_am": "ጤናማ በቆሎ",
+
+            "scientific_name": null,
+
+            "english": {
+                "description": "The image does not show the visual characteristics associated with the three diseases represented in this model.",
+
+                "symptoms": [
+                    "No strong visual evidence of Northern Leaf Blight.",
+                    "No strong visual evidence of Common Rust.",
+                    "No strong visual evidence of Gray Leaf Spot."
+                ],
+
+                "causes": [
+                    "No disease cause is assigned because the model classified the image as Healthy."
+                ],
+
+                "favorable_conditions": [
+                    "Not applicable to a disease diagnosis."
+                ],
+
+                "prevention": [
+                    "Continue regular field monitoring.",
+                    "Maintain appropriate crop management practices.",
+                    "Monitor plants for new symptoms as the crop develops."
+                ],
+
+                "management": [
+                    "No disease treatment is recommended from a Healthy classification alone.",
+                    "Continue routine monitoring.",
+                    "If new symptoms appear, submit a new image for diagnosis."
+                ],
+
+                "severity": "Healthy"
+            },
+
+            "amharic": {
+                "description": "ይህ ምስል በሞዴሉ የተወከሉትን ሶስት የበቆሎ በሽታዎች ግልጽ የሆኑ ምልክቶች አላሳየም።",
+
+                "symptoms": [
+                    "የሰሜን ቅጠል በሽታ ግልጽ ምልክት አልታየም።",
+                    "የዝገት በሽታ ግልጽ ምልክት አልታየም።",
+                    "የግራጫ ቅጠል ነጠብጣብ በሽታ ግልጽ ምልክት አልታየም።"
+                ],
+
+                "causes": [
+                    "ሞዴሉ ምስሉን ጤናማ ብሎ ስለመደበው የበሽታ ምክንያት አልተመደበም።"
+                ],
+
+                "favorable_conditions": [
+                    "ለበሽታ ምርመራ አይመለከትም።"
+                ],
+
+                "prevention": [
+                    "የእርሻውን ሁኔታ በየጊዜው መከታተል።",
+                    "ተገቢ የሆኑ የሰብል አስተዳደር ልምዶችን መቀጠል።",
+                    "በሰብሉ ላይ አዲስ ምልክቶች ከታዩ በጥንቃቄ መከታተል።"
+                ],
+
+                "management": [
+                    "ጤናማ ተብሎ በተመደበ ምስል ላይ ብቻ የበሽታ ሕክምና አያስፈልግም።",
+                    "መደበኛ ክትትልን መቀጠል።",
+                    "አዲስ ምልክቶች ከታዩ አዲስ ምስል በመላክ እንደገና ምርመራ ማድረግ።"
+                ],
+
+                "severity": "ጤናማ"
+            },
+
+            "sources": [],
+
+            "validation": {
+                "status": "system_defined",
+                "method": "model_class_definition",
+                "expert_validated": false,
+                "reviewer": null,
+                "date": null,
+                "notes": "Healthy is a model classification rather than a disease."
+            }
+        }
+    ]
+}
