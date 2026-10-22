@@ -1,6 +1,7 @@
 const SHELL_CACHE = 'maizecare-shell-v2';
 const LEGACY_SHELL_CACHE = 'maizecare-shell-v1';
 const MODEL_CACHE = 'maizecare-maize-model-v1';
+const VALIDITY_MODEL_CACHE = 'maizecare-maize-validity-model-v1';
 const CRITICAL_ASSETS = '__MAIZECARE_CRITICAL_ASSETS__';
 const OPTIONAL_ASSETS = '__MAIZECARE_OPTIONAL_ASSETS__';
 
@@ -9,6 +10,13 @@ const MODEL_ASSETS = [
   'models/maize/group1-shard1of3.bin',
   'models/maize/group1-shard2of3.bin',
   'models/maize/group1-shard3of3.bin',
+];
+
+const VALIDITY_MODEL_ASSETS = [
+  'models/maize-validity-graph/model.json',
+  'models/maize-validity-graph/group1-shard1of3.bin',
+  'models/maize-validity-graph/group1-shard2of3.bin',
+  'models/maize-validity-graph/group1-shard3of3.bin',
 ];
 
 const scopeRoot = new URL('./', self.registration.scope);
@@ -43,7 +51,7 @@ self.addEventListener('install', (event) => {
       await cache.put(cacheKey(url), response);
     }));
     
-    // Precache the complete TensorFlow.js model for offline diagnosis.
+    // Precache both models so validity checks and diagnosis work offline.
     const modelCache = await caches.open(MODEL_CACHE);
 
     await Promise.all(MODEL_ASSETS.map(async (fileName) => {
@@ -55,6 +63,18 @@ self.addEventListener('install', (event) => {
       }
 
       await modelCache.put(cacheKey(url), response);
+    }));
+
+    const validityModelCache = await caches.open(VALIDITY_MODEL_CACHE);
+    await Promise.all(VALIDITY_MODEL_ASSETS.map(async (fileName) => {
+      const url = new URL(fileName, scopeRoot).href;
+      const response = await fetch(url, { cache: 'reload' });
+
+      if (!response.ok) {
+        throw new Error(`Unable to cache required maize validity model file: ${fileName}`);
+      }
+
+      await validityModelCache.put(cacheKey(url), response);
     }));
 
     // Images and fonts improve the experience but must not block SW install.
@@ -88,9 +108,15 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || url.pathname.includes('/api/')) return;
 
-  if (url.pathname.includes('/models/maize/')) {
+  const modelCacheName = url.pathname.includes('/models/maize-validity-graph/')
+    ? VALIDITY_MODEL_CACHE
+    : url.pathname.includes('/models/maize/')
+      ? MODEL_CACHE
+      : null;
+
+  if (modelCacheName) {
     event.respondWith((async () => {
-      const cache = await caches.open(MODEL_CACHE);
+      const cache = await caches.open(modelCacheName);
       const key = cacheKey(request.url);
       const cached = await cache.match(key);
       if (cached) return cached;

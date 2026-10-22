@@ -34,28 +34,48 @@ import { ReportsPage } from './pages/ReportsPage';
 import { UserManagementPage } from './pages/UserManagementPage';
 import { WeatherPage } from './pages/WeatherPage';
 import { useLocation } from 'react-router-dom';
+import { useAuth } from './context/AuthContext';
 import { getStoredToken } from './services/api';
 import { syncPendingDiagnoses } from './services/offlineDiagnosisSyncService';
 
 function OfflineSyncRunner() {
   const location = useLocation();
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
   const syncingRef = React.useRef(false);
+  const syncRequestedRef = React.useRef(false);
+  const runSyncRef = React.useRef<() => void>(() => undefined);
 
   const runSync = React.useCallback(async () => {
-    if (!navigator.onLine || !getStoredToken() || syncingRef.current) {
+    if (
+      !navigator.onLine ||
+      !isAuthenticated ||
+      userId === undefined ||
+      !getStoredToken()
+    ) {
+      return;
+    }
+
+    if (syncingRef.current) {
+      syncRequestedRef.current = true;
       return;
     }
 
     syncingRef.current = true;
 
     try {
-      await syncPendingDiagnoses('en');
+      await syncPendingDiagnoses(userId, 'en');
     } catch (error) {
       console.error('Offline diagnosis sync could not complete:', error);
     } finally {
       syncingRef.current = false;
+      if (syncRequestedRef.current) {
+        syncRequestedRef.current = false;
+        queueMicrotask(() => runSyncRef.current());
+      }
     }
-  }, []);
+  }, [isAuthenticated, userId]);
+  runSyncRef.current = runSync;
 
   // Retry on startup and after navigation, including after login.
   React.useEffect(() => {

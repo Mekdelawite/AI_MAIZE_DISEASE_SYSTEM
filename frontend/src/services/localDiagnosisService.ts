@@ -8,6 +8,12 @@ const CLASS_NAMES = [
   'Gray Leaf Spot',
   'Healthy',
 ] as const;
+const VALIDITY_MODEL_URL =
+  `${import.meta.env.BASE_URL}models/maize-validity-graph/model.json`;
+const VALIDITY_MODEL_CACHE = 'maizecare-maize-validity-model-v1';
+const VALIDITY_IMAGE_SIZE = 160;
+const VALID_MAIZE_THRESHOLD = 0.5;
+const validatedFiles = new WeakMap<File, Promise<void>>();
 
 export interface LocalDiagnosisResult {
   className: (typeof CLASS_NAMES)[number];
@@ -15,20 +21,37 @@ export interface LocalDiagnosisResult {
   probabilities: number[];
 }
 
-async function readModelResource(url: string): Promise<Response> {
-  const cache = await caches.open(MODEL_CACHE);
-  const cached = await cache.match(url);
+async function readModelResource(
+  url: string | URL | Request,
+  cacheName: string = MODEL_CACHE,
+  requestInit?: RequestInit,
+): Promise<Response> {
+  const resourceUrl = typeof url === 'string'
+    ? url
+    : url instanceof URL
+      ? url.toString()
+      : url.url;
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(resourceUrl);
+
   if (cached) return cached;
 
   if (!navigator.onLine) {
-    throw new Error('The offline model is not cached on this device yet. Connect to the internet and run a local diagnosis once to download it.');
+    throw new Error(
+      'The offline model is not cached on this device yet. Connect to the internet and run a local diagnosis once to download it.',
+    );
   }
 
-  const response = await fetch(url, { credentials: 'same-origin' });
+  const response = await fetch(resourceUrl, {
+    ...requestInit,
+    credentials: requestInit?.credentials ?? 'same-origin',
+  });
+
   if (!response.ok) {
     throw new Error(`Unable to download the offline model (${response.status}).`);
   }
-  await cache.put(url, response.clone());
+
+  await cache.put(resourceUrl, response.clone());
   return response;
 }
 
@@ -87,7 +110,7 @@ async function loadLocalModel(): Promise<tfTypes.LayersModel> {
   const shardUrls = groups.flatMap((group) =>
     group.paths.map((path) => new URL(path, modelUrl).toString())
   );
-  const shardResponses = await Promise.all(shardUrls.map(readModelResource));
+  const shardResponses = await Promise.all(shardUrls.map((url) => readModelResource(url)));
   const shardBuffers = await Promise.all(shardResponses.map((response) => response.arrayBuffer()));
   const totalBytes = shardBuffers.reduce((sum, buffer) => sum + buffer.byteLength, 0);
   const weightData = new Uint8Array(totalBytes);
@@ -114,7 +137,54 @@ async function loadLocalModel(): Promise<tfTypes.LayersModel> {
   }
   return model;
 }
+let validityModelPromise: Promise<tfTypes.GraphModel> | null = null;
 
+async function loadValidityModel(): Promise<tfTypes.GraphModel> {
+  const tf = await getTensorflow();
+
+  const modelUrl = new URL(
+    VALIDITY_MODEL_URL,
+    window.location.href,
+  ).toString();
+
+  const model = await tf.loadGraphModel(modelUrl, {
+    fetchFunc: (url, init) =>
+      readModelResource(
+        url,
+        VALIDITY_MODEL_CACHE,
+        init,
+      ),
+  });
+
+  const inputShape = model.inputs[0]?.shape;
+
+  if (
+    inputShape?.[1] !== VALIDITY_IMAGE_SIZE ||
+    inputShape?.[2] !== VALIDITY_IMAGE_SIZE ||
+    inputShape?.[3] !== 3
+  ) {
+    model.dispose();
+    throw new Error(
+      'The maize-image validation model has an unexpected input shape.',
+    );
+  }
+
+  return model;
+}
+
+async function getValidityModel(): Promise<tfTypes.GraphModel> {
+  const tf = await getTensorflow();
+  await tf.ready();
+
+  if (!validityModelPromise) {
+    validityModelPromise = loadValidityModel().catch((error) => {
+      validityModelPromise = null;
+      throw error;
+    });
+  }
+
+  return validityModelPromise;
+}
 let modelPromise: Promise<tfTypes.LayersModel> | null = null;
 
 async function getModel(): Promise<tfTypes.LayersModel> {
@@ -145,29 +215,162 @@ function loadImage(file: File): Promise<HTMLImageElement> {
   });
 }
 
+async function validateMaizeLeafImage(
+  tf: typeof import('@tensorflow/tfjs'),
+  image: HTMLImageElement,
+): Promise<void> {
+  const model = await getValidityModel();
+  const canvas = document.createElement('canvas');
+  canvas.width = VALIDITY_IMAGE_SIZE;
+  canvas.height = VALIDITY_IMAGE_SIZE;
+
+  const context = canvas.getContext('2d', {
+    willReadFrequently: true,
+  });
+
+  if (!context) {
+    throw new Error(
+      'This browser cannot prepare the image for validation.',
+    );
+  }
+
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(
+    image,
+    0,
+    0,
+    VALIDITY_IMAGE_SIZE,
+    VALIDITY_IMAGE_SIZE,
+  );
+
+  const pixels = tf.browser.fromPixels(canvas).toFloat();
+  const input = pixels.div(127.5).sub(1).expandDims(0);
+  pixels.dispose();
+
+  let output: tfTypes.Tensor | tfTypes.Tensor[] | tfTypes.NamedTensorMap | undefined;
+
+  try {
+    output = model.execute(input);
+
+    let scoreTensor: tfTypes.Tensor;
+
+    if (Array.isArray(output)) {
+      scoreTensor = output[0];
+    } else if (output instanceof tf.Tensor) {
+      scoreTensor = output;
+    } else {
+      const namedOutput = output as tfTypes.NamedTensorMap;
+      scoreTensor = namedOutput.output_0;
+    }
+
+    if (!scoreTensor) {
+      throw new Error(
+        'The maize-image validation model returned no prediction.',
+      );
+    }
+
+    const scores = Array.from(await scoreTensor.data());
+
+    if (
+      scores.length !== 1 ||
+      !Number.isFinite(scores[0]) ||
+      scores[0] < 0 ||
+      scores[0] > 1
+    ) {
+      throw new Error(
+        'The maize-image validation model returned an invalid prediction.',
+      );
+    }
+
+    if (scores[0] < VALID_MAIZE_THRESHOLD) {
+      throw new Error(
+        'This image does not appear to show a maize leaf. Please select a clear photo of a maize leaf and try again.',
+      );
+    }
+  } finally {
+    input.dispose();
+
+    if (output) {
+      if (Array.isArray(output)) {
+        output.forEach((tensor) => tensor.dispose());
+      } else if (output instanceof tf.Tensor) {
+        output.dispose();
+      } else {
+        Object.values(output).forEach((tensor) => tensor.dispose());
+      }
+    }
+  }
+}
+
+async function areModelResourcesCached(
+  cacheName: string,
+  modelUrl: string,
+): Promise<boolean> {
+  try {
+    const cache = await caches.open(cacheName);
+    const modelResponse = await cache.match(modelUrl);
+    if (!modelResponse) return false;
+
+    const artifacts = await modelResponse.json();
+    const shardUrls: string[] = (artifacts.weightsManifest || []).flatMap(
+      (group: { paths: string[] }) =>
+        group.paths.map((path) => new URL(path, modelUrl).toString()),
+    );
+
+    return shardUrls.length > 0 &&
+      (await Promise.all(shardUrls.map((url) => cache.match(url)))).every(Boolean);
+  } catch {
+    return false;
+  }
+}
+
 export const localDiagnosisService = {
   async isModelCached(): Promise<boolean> {
     if (typeof caches === 'undefined') return false;
-    const cache = await caches.open(MODEL_CACHE);
-    const modelUrl = new URL(MODEL_URL, window.location.href).toString();
-    const cachedResponse = await cache.match(modelUrl);
-    if (!cachedResponse) return false;
+    const diseaseModelUrl = new URL(MODEL_URL, window.location.href).toString();
+    const validityModelUrl = new URL(VALIDITY_MODEL_URL, window.location.href).toString();
+    const [diseaseModelCached, validityModelCached] = await Promise.all([
+      areModelResourcesCached(MODEL_CACHE, diseaseModelUrl),
+      areModelResourcesCached(VALIDITY_MODEL_CACHE, validityModelUrl),
+    ]);
+
+    return diseaseModelCached && validityModelCached;
+  },
+
+  async validateImage(file: File): Promise<void> {
+    const existingValidation = validatedFiles.get(file);
+    if (existingValidation) {
+      return existingValidation;
+    }
+
+    const validation = (async () => {
+      const tf = await getTensorflow();
+      const image = await loadImage(file);
+      await validateMaizeLeafImage(tf, image);
+    })();
+    validatedFiles.set(file, validation);
 
     try {
-      const artifacts = await cachedResponse.json();
-      const shardUrls: string[] = (artifacts.weightsManifest || []).flatMap(
-        (group: { paths: string[] }) => group.paths.map((path) => new URL(path, modelUrl).toString())
-      );
-      return shardUrls.length > 0 && (await Promise.all(shardUrls.map((url) => cache.match(url)))).every(Boolean);
-    } catch {
-      return false;
+      await validation;
+    } catch (error: unknown) {
+      if (validatedFiles.get(file) === validation) {
+        validatedFiles.delete(file);
+      }
+      throw error;
     }
   },
 
-  async predict(file: File): Promise<LocalDiagnosisResult> {
+  async predict(
+    file: File,
+    userId?: string | number,
+  ): Promise<LocalDiagnosisResult> {
+    await this.validateImage(file);
     const tf = await getTensorflow();
-    const model = await getModel();
     const image = await loadImage(file);
+
+    // Run the existing four-class disease model only after validity passes.
+    const model = await getModel();
     const canvas = document.createElement('canvas');
     canvas.width = 224;
     canvas.height = 224;
@@ -193,18 +396,21 @@ export const localDiagnosisService = {
       }
       const bestIndex = probabilities.indexOf(Math.max(...probabilities));
       const result: LocalDiagnosisResult = {
-  className: CLASS_NAMES[bestIndex],
-  confidence: probabilities[bestIndex],
-  probabilities,
-};
+        className: CLASS_NAMES[bestIndex],
+        confidence: probabilities[bestIndex],
+        probabilities,
+      };
 
-// Persist predictions made while offline.
-// Online submissions remain under the existing backend workflow.
-if (!navigator.onLine) {
-  await offlineDiagnosisStore.save(result, file);
-}
+      // Persist predictions made while offline. Online submissions remain under the existing backend workflow.
+      if (
+        !navigator.onLine &&
+        ((typeof userId === 'number' && Number.isFinite(userId)) ||
+          (typeof userId === 'string' && userId.trim()))
+      ) {
+        await offlineDiagnosisStore.save(result, file, userId);
+      }
 
-return result;
+      return result;
     } finally {
       input.dispose();
     }

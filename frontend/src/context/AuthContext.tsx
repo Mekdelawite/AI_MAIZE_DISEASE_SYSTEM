@@ -166,7 +166,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setUser(null);
       setOfflineMode(false);
       setLoading(false);
-      saveOfflineUser(null);
 
       const message =
         'Your session has expired or is unauthorized. Please sign in again.';
@@ -223,13 +222,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           message?: string;
         };
 
-        if (error?.status === 401 || error?.status === 403) {
-          // The server explicitly rejected this session.
+        if ([401, 403, 404, 422].includes(error?.status ?? 0)) {
+          // The server rejected this token or its account identity.
           setStoredToken(null);
           setToken(null);
           setUser(null);
           setOfflineMode(false);
-          saveOfflineUser(null);
 
           setSessionError(
             'Your session is no longer valid. Please sign in again.'
