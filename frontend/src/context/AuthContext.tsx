@@ -399,8 +399,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const isAuthenticated =
     Boolean(token && user) ||
-    Boolean(offlineMode && user) ||
-    Boolean(routePreviewRole);
+    Boolean(offlineMode && user);
 
   const canLoginOffline = Boolean(getOfflineUser());
 

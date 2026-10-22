@@ -63,7 +63,8 @@ CONFIDENCE_THRESHOLD = 60.0
 SUPPORTED_EXTENSIONS = {
     ".jpg",
     ".jpeg",
-    ".png"
+    ".png",
+    ".webp",
 }
 
 # -------------------------------------------------------

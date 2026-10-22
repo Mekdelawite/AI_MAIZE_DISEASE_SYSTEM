@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Plus, RefreshCw, X } from 'lucide-react';
+import { Plus, RefreshCw, Search, X } from 'lucide-react';
 import { EmptyState, ErrorState, LoadingSkeleton } from '../components/common/FeedbackStates';
 import { AppShell } from '../components/layout/AppShell';
 import { useApp } from '../context/AppContext';
@@ -12,6 +12,10 @@ export const ExtensionAgentManagementPage: React.FC = () => {
   const [agents, setAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [regionFilter, setRegionFilter] = useState('');
+  const [woredaFilter, setWoredaFilter] = useState('');
 
   // Create Agent Modal
   const [createOpen, setCreateOpen] = useState(false);
@@ -28,18 +32,30 @@ export const ExtensionAgentManagementPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const list = await adminService.getExtensionAgents();
+      const list = await adminService.getExtensionAgents({
+        search: search.trim() || undefined,
+        region: regionFilter || undefined,
+        woreda: woredaFilter || undefined,
+      });
       setAgents(list);
     } catch (err: any) {
       setError(err?.message || 'Unable to load extension agents from /api/admin/extension-agents.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [search, regionFilter, woredaFilter]);
 
   useEffect(() => {
     loadAgents();
   }, [loadAgents]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setSearch(searchInput.trim());
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchInput]);
 
   const handleCreateAgent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,7 +93,6 @@ export const ExtensionAgentManagementPage: React.FC = () => {
   return (
     <AppShell
       title={t('navAdminAgents')}
-      subtitle="Manage woreda agricultural extension agents via GET and POST /api/admin/extension-agents."
       actions={
         <div className="flex items-center gap-2">
           <button
@@ -99,6 +114,35 @@ export const ExtensionAgentManagementPage: React.FC = () => {
         </div>
       }
     >
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[240px] flex-1">
+          <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search by name or phone number..."
+            aria-label="Search extension agents"
+            className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
+          />
+        </div>
+        <input
+          type="text"
+          value={regionFilter}
+          onChange={(e) => setRegionFilter(e.target.value.trimStart())}
+          placeholder="Filter by Region"
+          aria-label="Filter by region"
+          className="px-3 py-2 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
+        />
+        <input
+          type="text"
+          value={woredaFilter}
+          onChange={(e) => setWoredaFilter(e.target.value.trimStart())}
+          placeholder="Filter by Woreda"
+          aria-label="Filter by woreda"
+          className="px-3 py-2 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
+        />
+      </div>
       {loading ? (
         <LoadingSkeleton rows={4} />
       ) : error ? (
@@ -109,10 +153,12 @@ export const ExtensionAgentManagementPage: React.FC = () => {
         />
       ) : agents.length === 0 ? (
         <EmptyState
-          title="No extension agents registered yet"
-          description="Provision woreda extension officers so they can monitor regional maize cases and reply to farmer questions."
-          actionLabel="Register Extension Agent"
-          onAction={() => setCreateOpen(true)}
+          title={search ? 'No matching extension agents found' : 'No extension agents registered yet'}
+          description={search
+            ? 'Try another name, phone number, region, or woreda.'
+            : 'Provision woreda extension officers so they can monitor regional maize cases and reply to farmer questions.'}
+          actionLabel={search ? undefined : 'Register Extension Agent'}
+          onAction={search ? undefined : () => setCreateOpen(true)}
         />
       ) : (
         <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] overflow-hidden">
@@ -123,7 +169,8 @@ export const ExtensionAgentManagementPage: React.FC = () => {
                   <th className="py-3 px-4">ID</th>
                   <th className="py-3 px-4">Agent Name</th>
                   <th className="py-3 px-4">Phone Number</th>
-                  <th className="py-3 px-4">Assigned Region & Woreda</th>
+                  <th className="py-3 px-4">Region</th>
+                  <th className="py-3 px-4">Woreda</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4">Created</th>
                 </tr>
@@ -140,9 +187,8 @@ export const ExtensionAgentManagementPage: React.FC = () => {
                     <td className="py-3 px-4 font-mono text-xs text-stone-600 dark:text-stone-400">
                       {ag.phone_number || ag.phone || '—'}
                     </td>
-                    <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">
-                      {ag.region || '—'} · {ag.woreda || '—'}
-                    </td>
+                    <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">{ag.region || '—'}</td>
+                    <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">{ag.woreda || '—'}</td>
                     <td className="py-3 px-4 text-xs">
                       {ag.is_active !== false ? (
                         <span className="text-emerald-800 dark:text-emerald-400 font-medium">Active</span>

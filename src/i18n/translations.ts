@@ -50,6 +50,7 @@ export const translations: Record<SupportedLanguage, Record<string, string>> = {
     navAdminUsers: 'User Management',
     navAdminFarmers: 'Farmers Directory',
     navAdminAgents: 'Extension Agents',
+    navAdminGeoMap: 'Geo-Disease Map',
     navAdminOutbreaks: 'Outbreak Alerts',
     navAdminReports: 'Reports & SMS',
 
@@ -172,6 +173,7 @@ export const translations: Record<SupportedLanguage, Record<string, string>> = {
     navAdminUsers: 'የተጠቃሚዎች አስተዳደር',
     navAdminFarmers: 'የገበሬዎች ዝርዝር',
     navAdminAgents: 'የኤክስቴንሽን ባለሙያዎች',
+    navAdminGeoMap: 'የበሽታ ጂኦ ካርታ',
     navAdminOutbreaks: 'የወረርሽኝ ማስጠንቀቂያ',
     navAdminReports: 'ሪፖርቶች እና SMS',
 

@@ -166,7 +166,7 @@ class DiagnosisService:
         except Exception as error:
 
             raise RuntimeError(
-                "Unable to initialize DiseasePredictor."
+                f"Unable to initialize DiseasePredictor: {error}"
             ) from error
 
     @classmethod
@@ -351,6 +351,11 @@ class DiagnosisService:
             return result
 
         except Exception as error:
+
+            print(
+                "[AI DIAGNOSIS] Prediction failed:",
+                repr(error),
+            )
 
             raise RuntimeError(
                 "Disease diagnosis failed."

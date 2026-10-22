@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertOctagon, Plus, RefreshCw, ShieldAlert, X } from 'lucide-react';
+import { AlertOctagon, BellRing, MessageSquare, Plus, RefreshCw, Search, ShieldAlert, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import {
   ConfirmDialog,
   EmptyState,
@@ -8,16 +9,19 @@ import {
 } from '../components/common/FeedbackStates';
 import { AppShell } from '../components/layout/AppShell';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { adminService } from '../services/adminService';
 import { OutbreakAlert } from '../types/api';
 import { formatDateTime } from '../utils/media';
 
 export const OutbreakManagementPage: React.FC = () => {
   const { t, notify } = useApp();
+  const { effectiveRole } = useAuth();
 
   const [alerts, setAlerts] = useState<OutbreakAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState('');
 
   // Filters
   const [regionFilter, setRegionFilter] = useState('');
@@ -70,6 +74,19 @@ export const OutbreakManagementPage: React.FC = () => {
     loadAlerts();
   }, [loadAlerts]);
 
+  const normalizedSearch = searchInput.trim().toLocaleLowerCase();
+  const visibleAlerts = normalizedSearch
+    ? alerts.filter((alert) =>
+        [
+          alert.disease_class,
+          alert.region,
+          alert.woreda,
+          alert.risk_level,
+          alert.risk_score,
+        ].some((value) => String(value ?? '').toLocaleLowerCase().includes(normalizedSearch))
+      )
+    : alerts;
+
   const handleInspectAlert = async (alertId: string | number) => {
     try {
       const detail = await adminService.getOutbreakAlertDetail(alertId);
@@ -116,16 +133,22 @@ export const OutbreakManagementPage: React.FC = () => {
         woreda: autoWoreda.trim() || undefined,
         analysis_period_days: autoDays.trim() ? Number(autoDays) : undefined,
       });
-      const outcome =
-        res?.message ||
-        (res?.outbreak_detected
-          ? 'Automatic evaluation confirmed an outbreak alert threshold.'
-          : 'Automatic evaluation completed by server. Inspect alert list for newly generated alerts.');
+      const analysis = res?.analysis || {};
+      const riskSummary = analysis?.risk_level
+        ? ` Risk: ${analysis.risk_level} (${analysis.outbreak_risk_score ?? 'score unavailable'}).`
+        : '';
+      const outcome = res?.alert_created
+        ? `Automatic outbreak alert${res?.alert_id ? ` #${res.alert_id}` : ''} created.${riskSummary}`
+        : res?.duplicate
+          ? `No new alert created because a matching alert is already within its cooldown period.${riskSummary}`
+          : res?.alert_required === false
+            ? `Evaluation complete: no alert threshold was met. ${analysis.total_diagnoses ?? 0} diagnoses from ${analysis.affected_farmers ?? 0} affected farmers among ${analysis.registered_farmers ?? 0} registered farmers.${riskSummary}`
+            : res?.message || 'Automatic outbreak evaluation completed; the server returned no alert decision details.';
       setLastOutcomeMessage(outcome);
       notify(outcome, 'info');
       setConfirmAutoOpen(false);
       setAutoModalOpen(false);
-      loadAlerts();
+      await loadAlerts();
     } catch (err: any) {
       notify(err?.message || 'Automatic outbreak evaluation failed on server.', 'error');
       setConfirmAutoOpen(false);
@@ -140,6 +163,14 @@ export const OutbreakManagementPage: React.FC = () => {
       subtitle="Monitor regional maize disease outbreak alerts, trigger manual alerts, or run automatic epidemiological threshold evaluations."
       actions={
         <div className="flex flex-wrap items-center gap-2">
+          {effectiveRole === 'admin' && <Link
+            to="/admin/regional-alerts"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-amber-700 hover:bg-amber-600 rounded-lg whitespace-nowrap"
+          ><BellRing className="w-3.5 h-3.5" /><span>Send Regional Alert</span></Link>}
+          <Link
+            to="/admin/outbreaks/sms"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-sky-800 hover:bg-sky-700 rounded-lg whitespace-nowrap"
+          ><MessageSquare className="w-3.5 h-3.5" /><span>Send SMS</span></Link>
           <button
             type="button"
             onClick={loadAlerts}
@@ -182,6 +213,17 @@ export const OutbreakManagementPage: React.FC = () => {
 
       {/* Filters */}
       <div className="mb-6 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-4 grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <div className="relative sm:col-span-2">
+          <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search disease, region, woreda, risk level, or score..."
+            aria-label="Search outbreak alerts"
+            className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
+          />
+        </div>
         <input
           type="text"
           value={diseaseFilter}
@@ -221,10 +263,12 @@ export const OutbreakManagementPage: React.FC = () => {
         <LoadingSkeleton rows={4} />
       ) : error ? (
         <ErrorState title="Could not load outbreak alerts" message={error} onRetry={loadAlerts} />
-      ) : alerts.length === 0 ? (
+      ) : visibleAlerts.length === 0 ? (
         <EmptyState
-          title="No outbreak alerts recorded"
-          description="Alerts returned by GET /api/outbreak-alerts will be listed here."
+          title={alerts.length === 0 ? 'No outbreak alerts recorded' : 'No matching outbreak alerts'}
+          description={alerts.length === 0
+            ? 'Alerts returned by GET /api/outbreak-alerts will be listed here.'
+            : 'Try another search term or adjust the filters.'}
         />
       ) : (
         <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] overflow-hidden">
@@ -234,15 +278,17 @@ export const OutbreakManagementPage: React.FC = () => {
                 <tr className="border-b border-stone-200 dark:border-stone-800 text-xs font-semibold text-stone-500 bg-stone-50/60 dark:bg-stone-900/40">
                   <th className="py-3 px-4">ID</th>
                   <th className="py-3 px-4">Disease Class</th>
-                  <th className="py-3 px-4">Region · Woreda</th>
-                  <th className="py-3 px-4">Risk Level · Score</th>
+                  <th className="py-3 px-4">Region</th>
+                  <th className="py-3 px-4">Woreda</th>
+                  <th className="py-3 px-4">Risk Level</th>
+                  <th className="py-3 px-4">Score</th>
                   <th className="py-3 px-4">Trigger</th>
                   <th className="py-3 px-4">Created</th>
                   <th className="py-3 px-4 text-right">Details</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
-                {alerts.map((al) => {
+                {visibleAlerts.map((al) => {
                   const alertId = al.alert_id ?? al.id;
                   const risk = (al.risk_level || 'medium').toLowerCase();
                   const riskColor =
@@ -264,18 +310,12 @@ export const OutbreakManagementPage: React.FC = () => {
                       <td className="py-3 px-4 font-semibold text-stone-900 dark:text-stone-100">
                         {al.disease_class}
                       </td>
-                      <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">
-                        {al.region} {al.woreda ? `· ${al.woreda}` : ''}
-                      </td>
+                      <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">{al.region || '—'}</td>
+                      <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">{al.woreda || '—'}</td>
                       <td className="py-3 px-4 text-xs">
                         <span className={`uppercase ${riskColor}`}>{al.risk_level || '—'}</span>
-                        {al.risk_score !== undefined && (
-                          <span className="font-mono tabular-nums text-stone-500">
-                            {' '}
-                            · Score: {al.risk_score}
-                          </span>
-                        )}
                       </td>
+                      <td className="py-3 px-4 text-xs font-mono tabular-nums text-stone-500">{al.risk_score ?? '—'}</td>
                       <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">
                         {al.trigger_type || '—'}
                       </td>

@@ -10,6 +10,7 @@ import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
+import { AdminGeoDiseaseMapPage } from './pages/AdminGeoDiseaseMapPage';
 import { AboutDevelopersPage } from './pages/AboutDevelopersPage';
 import { CropCalendarPage } from './pages/CropCalendarPage';
 import { DiagnosisDetailPage } from './pages/DiagnosisDetailPage';
@@ -27,10 +28,12 @@ import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { OutbreakManagementPage } from './pages/OutbreakManagementPage';
+import { OutbreakSmsPage } from './pages/OutbreakSmsPage';
 import { PasswordRecoveryPage } from './pages/PasswordRecoveryPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ReportsPage } from './pages/ReportsPage';
+import { RegionalAlertPage } from './pages/RegionalAlertPage';
 import { UserManagementPage } from './pages/UserManagementPage';
 import { WeatherPage } from './pages/WeatherPage';
 import { useLocation } from 'react-router-dom';
@@ -222,6 +225,14 @@ export default function App() {
               }
             />
             <Route
+              path="/admin/geo-diseases"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AdminGeoDiseaseMapPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/admin/extension-agents"
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
@@ -230,12 +241,20 @@ export default function App() {
               }
             />
             <Route
+              path="/admin/outbreaks/sms"
+              element={<ProtectedRoute allowedRoles={['extension_agent', 'admin']}><OutbreakSmsPage /></ProtectedRoute>}
+            />
+            <Route
               path="/admin/outbreaks"
               element={
                 <ProtectedRoute allowedRoles={['extension_agent', 'admin']}>
                   <OutbreakManagementPage />
                 </ProtectedRoute>
               }
+            />
+            <Route
+              path="/admin/regional-alerts"
+              element={<ProtectedRoute allowedRoles={['admin']}><RegionalAlertPage /></ProtectedRoute>}
             />
             <Route
               path="/admin/reports"

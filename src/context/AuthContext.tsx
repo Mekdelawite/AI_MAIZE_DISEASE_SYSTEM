@@ -137,7 +137,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const effectiveRole: UserRole | null = user?.role || routePreviewRole || null;
-  const isAuthenticated = Boolean(token && user) || Boolean(routePreviewRole);
+  const isAuthenticated = Boolean(token && user);
 
   return (
     <AuthContext.Provider

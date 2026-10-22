@@ -100,8 +100,11 @@ export const translations: Record<SupportedLanguage, Record<string, string>> = {
     navAdminUsers: 'User Management',
     navAdminFarmers: 'Farmers Directory',
     navAdminAgents: 'Extension Agents',
+    navAdminGeoMap: 'Geo-Disease Map',
     navAdminOutbreaks: 'Outbreak Alerts',
-    navAdminReports: 'Reports & SMS',
+    navAdminRegionalAlerts: 'Send Regional Alert',
+    navAdminOutbreakSms: 'Send Outbreak SMS',
+    navAdminReports: 'Reports',
 
     // Landing Page
     heroKicker: 'Ethiopian Smallholder Maize Advisory System',
@@ -368,8 +371,11 @@ export const translations: Record<SupportedLanguage, Record<string, string>> = {
     navAdminUsers: 'የተጠቃሚዎች አስተዳደር',
     navAdminFarmers: 'የገበሬዎች ዝርዝር',
     navAdminAgents: 'የኤክስቴንሽን ባለሙያዎች',
+    navAdminGeoMap: 'የበሽታ ጂኦ ካርታ',
     navAdminOutbreaks: 'የወረርሽኝ ማስጠንቀቂያ',
-    navAdminReports: 'ሪፖርቶች እና SMS',
+    navAdminRegionalAlerts: 'የክልል ማስጠንቀቂያ ላክ',
+    navAdminOutbreakSms: 'የወረርሽኝ SMS ላክ',
+    navAdminReports: 'ሪፖርቶች',
 
     // Landing Page
     heroKicker: 'ለኢትዮጵያ የበቆሎ አምራች አርሶ አደሮች የተዘጋጀ',

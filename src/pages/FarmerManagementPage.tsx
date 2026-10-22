@@ -13,9 +13,11 @@ export const FarmerManagementPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [region, setRegion] = useState('');
   const [woreda, setWoreda] = useState('');
+  const [kebele, setKebele] = useState('');
 
   const loadFarmers = useCallback(async () => {
     setLoading(true);
@@ -25,6 +27,7 @@ export const FarmerManagementPage: React.FC = () => {
         search: search.trim() || undefined,
         region: region.trim() || undefined,
         woreda: woreda.trim() || undefined,
+        kebele: kebele.trim() || undefined,
       });
       setFarmers(list);
     } catch (err: any) {
@@ -32,16 +35,23 @@ export const FarmerManagementPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [search, region, woreda]);
+  }, [search, region, woreda, kebele]);
 
   useEffect(() => {
     loadFarmers();
   }, [loadFarmers]);
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setSearch(searchInput.trim());
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchInput]);
+
   return (
     <AppShell
       title={t('navAdminFarmers')}
-      subtitle="Directory of smallholder farmers, regional woreda locations, coordinates, and SMS alert preferences from GET /api/admin/farmers."
       actions={
         <button
           type="button"
@@ -53,14 +63,14 @@ export const FarmerManagementPage: React.FC = () => {
         </button>
       }
     >
-      <div className="mb-6 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-4 grid grid-cols-1 sm:grid-cols-4 gap-3">
+      <div className="mb-6 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-4 grid grid-cols-1 sm:grid-cols-5 gap-3">
         <div className="relative sm:col-span-2">
           <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search farmer name or phone..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search farmer name, phone, or kebele..."
             className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
           />
         </div>
@@ -69,6 +79,13 @@ export const FarmerManagementPage: React.FC = () => {
           value={region}
           onChange={(e) => setRegion(e.target.value)}
           placeholder="Filter by Region"
+          className="px-3 py-1.5 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
+        />
+        <input
+          type="text"
+          value={kebele}
+          onChange={(e) => setKebele(e.target.value)}
+          placeholder="Filter by Kebele"
           className="px-3 py-1.5 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
         />
         <input
@@ -98,8 +115,11 @@ export const FarmerManagementPage: React.FC = () => {
                   <th className="py-3 px-4">ID</th>
                   <th className="py-3 px-4">Full Name</th>
                   <th className="py-3 px-4">Phone</th>
-                  <th className="py-3 px-4">Region · Woreda · Kebele</th>
-                  <th className="py-3 px-4">Language · SMS</th>
+                  <th className="py-3 px-4">Region</th>
+                  <th className="py-3 px-4">Woreda</th>
+                  <th className="py-3 px-4">Kebele</th>
+                  <th className="py-3 px-4">Language</th>
+                  <th className="py-3 px-4">SMS</th>
                   <th className="py-3 px-4">Registered</th>
                 </tr>
               </thead>
@@ -115,13 +135,14 @@ export const FarmerManagementPage: React.FC = () => {
                     <td className="py-3 px-4 font-mono text-xs text-stone-600 dark:text-stone-400">
                       {f.phone_number || f.phone || '—'}
                     </td>
+                    <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">{f.region || '—'}</td>
+                    <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">{f.woreda || '—'}</td>
+                    <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">{f.kebele || '—'}</td>
                     <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">
-                      {f.region || '—'} · {f.woreda || '—'}
-                      {f.kebele ? ` · ${f.kebele}` : ''}
+                      {(f.preferred_language || 'en').toUpperCase()}
                     </td>
                     <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">
-                      {(f.preferred_language || 'en').toUpperCase()} ·{' '}
-                      {f.sms_opt_in ? 'SMS Opt-In' : 'SMS Off'}
+                      {f.sms_opt_in ? 'On' : 'Off'}
                     </td>
                     <td className="py-3 px-4 text-xs font-mono tabular-nums text-stone-500">
                       {formatDateTime(f.created_at)}

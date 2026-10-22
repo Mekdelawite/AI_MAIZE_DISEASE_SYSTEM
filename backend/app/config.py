@@ -21,6 +21,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from sqlalchemy.engine import make_url
 
 load_dotenv()
 # =========================================================
@@ -116,9 +117,14 @@ class Config:
     # Database
     # -----------------------------------------------------
 
-    DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    )
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    if DATABASE_URL:
+        database_url = make_url(DATABASE_URL)
+        # requirements.txt installs Psycopg 3. Keep ordinary PostgreSQL URLs
+        # working while selecting its SQLAlchemy dialect explicitly.
+        if database_url.drivername in {"postgres", "postgresql"}:
+            database_url = database_url.set(drivername="postgresql+psycopg")
+        DATABASE_URL = database_url.render_as_string(hide_password=False)
 
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
 

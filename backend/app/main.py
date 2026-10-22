@@ -54,6 +54,7 @@ from backend.app.routes.report import report_bp
 from backend.app.routes.crop_calendar import crop_calendar_bp
 from backend.app.routes.sync import sync_bp
 from backend.app.routes.sync_batch import sync_batch_bp
+from backend.app.routes.regional_alert import regional_alert_bp
 def create_app(
     environment: str | None = None,
 ) -> Flask:
@@ -139,6 +140,7 @@ def create_app(
     app.register_blueprint(crop_calendar_bp)
     app.register_blueprint(sync_bp)
     app.register_blueprint(sync_batch_bp)
+    app.register_blueprint(regional_alert_bp)
 
     # =====================================================
     # ROOT ENDPOINT

@@ -10,6 +10,7 @@ import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
+import { AdminGeoDiseaseMapPage } from './pages/AdminGeoDiseaseMapPage';
 import { CropCalendarPage } from './pages/CropCalendarPage';
 import { DiagnosisDetailPage } from './pages/DiagnosisDetailPage';
 import { DiagnosisHistoryPage } from './pages/DiagnosisHistoryPage';
@@ -167,6 +168,14 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <FarmerManagementPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/geo-diseases"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AdminGeoDiseaseMapPage />
                 </ProtectedRoute>
               }
             />

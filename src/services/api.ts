@@ -20,7 +20,11 @@ export class ApiError extends Error {
 
 export function getStoredToken(): string | null {
   try {
-    return localStorage.getItem(TOKEN_STORAGE_KEY);
+    // Remove tokens saved by older versions so they cannot keep a persistent session.
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem('maize_token');
+    localStorage.removeItem('maizecare_jwt_token');
+    return sessionStorage.getItem(TOKEN_STORAGE_KEY);
   } catch {
     return null;
   }
@@ -29,10 +33,13 @@ export function getStoredToken(): string | null {
 export function setStoredToken(token: string | null): void {
   try {
     if (!token) {
-      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      sessionStorage.removeItem(TOKEN_STORAGE_KEY);
     } else {
-      localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
     }
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem('maize_token');
+    localStorage.removeItem('maizecare_jwt_token');
   } catch {
     // ignore storage errors
   }

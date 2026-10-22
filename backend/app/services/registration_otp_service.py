@@ -69,9 +69,13 @@ class RegistrationOTPService:
     @staticmethod
     def _hash_otp(otp: str) -> str:
         """Hash an OTP using the application's secret."""
-        secret = str(current_app.config.get("JWT_SECRET_KEY", ""))
+        secret = current_app.config.get("JWT_SECRET_KEY")
 
-        if not secret or secret == "dev-change-this-jwt-secret-key":
+        if (
+            not isinstance(secret, str)
+            or secret.strip() in {"", "dev-change-this-jwt-secret-key"}
+            or len(secret.encode("utf-8")) < 32
+        ):
             raise RegistrationOTPError(
                 "OTP verification is not configured securely."
             )
