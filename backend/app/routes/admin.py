@@ -170,9 +170,17 @@ def get_extension_agents():
 
     try:
 
+        search = request.args.get("search", "").strip() or None
+        region = request.args.get("region", "").strip() or None
+        woreda = request.args.get("woreda", "").strip() or None
+
         agents = (
             AdminService
-            .get_all_extension_agents()
+            .get_all_extension_agents(
+                search=search,
+                region=region,
+                woreda=woreda,
+            )
         )
 
         return success_response(agents)
@@ -199,14 +207,31 @@ def get_extension_agents():
 @roles_required("admin")
 def get_users():
     """
-    Return all users.
+    Return users filtered by optional role, region, kebele, and text search.
     """
+
+    role = request.args.get("role", "").strip().lower()
+    region = request.args.get("region", "").strip()
+    kebele = request.args.get("kebele", "").strip()
+    search = request.args.get("search", "").strip()
+
+    if role and role not in {"farmer", "extension_agent", "admin"}:
+        return error_response(
+            "INVALID_ROLE_FILTER",
+            "Role must be farmer, extension_agent, or admin.",
+            400,
+        )
 
     try:
 
         users = (
             AdminService
-            .get_all_users()
+            .get_all_users(
+                role=role or None,
+                region=region or None,
+                kebele=kebele or None,
+                search=search or None,
+            )
         )
 
         return success_response(users)
@@ -317,9 +342,19 @@ def get_farmers():
 
     try:
 
+        search = request.args.get("search", "").strip() or None
+        region = request.args.get("region", "").strip() or None
+        woreda = request.args.get("woreda", "").strip() or None
+        kebele = request.args.get("kebele", "").strip() or None
+
         farmers = (
             AdminService
-            .get_all_farmers()
+            .get_all_farmers(
+                search=search,
+                region=region,
+                woreda=woreda,
+                kebele=kebele,
+            )
         )
 
         return success_response(farmers)
@@ -494,7 +529,6 @@ def get_regional_statistics():
     end_date = request.args.get(
         "end_date"
     )
-
     try:
 
         statistics = (
@@ -579,6 +613,9 @@ def get_geo_diseases():
     end_date = request.args.get(
         "end_date"
     )
+    include_coverage = request.args.get(
+        "include_coverage", "false"
+    ).strip().lower() in {"1", "true", "yes"}
 
     try:
 
@@ -588,6 +625,7 @@ def get_geo_diseases():
                 disease_class=disease_class,
                 start_date=start_date,
                 end_date=end_date,
+                include_coverage=include_coverage,
             )
         )
 

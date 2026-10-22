@@ -33,7 +33,7 @@ export const adminService = {
     return apiRequest<any>('/api/admin/dashboard', { method: 'GET' });
   },
 
-  async getUsers(params?: { role?: string; search?: string; is_active?: boolean; page?: number }): Promise<UserRecord[]> {
+  async getUsers(params?: { role?: string; region?: string; kebele?: string; search?: string; is_active?: boolean; page?: number }): Promise<UserRecord[]> {
     const res = await apiRequest<any>('/api/admin/users', { method: 'GET', params });
     if (Array.isArray(res)) return res;
     if (Array.isArray(res?.users)) return res.users;
@@ -41,7 +41,7 @@ export const adminService = {
     return [];
   },
 
-  async getFarmers(params?: { region?: string; woreda?: string; search?: string }): Promise<any[]> {
+  async getFarmers(params?: { region?: string; woreda?: string; kebele?: string; search?: string }): Promise<any[]> {
     const res = await apiRequest<any>('/api/admin/farmers', { method: 'GET', params });
     if (Array.isArray(res)) return res;
     if (Array.isArray(res?.farmers)) return res.farmers;
@@ -84,12 +84,23 @@ export const adminService = {
     return apiRequest('/api/admin/regional-statistics', { method: 'GET' });
   },
 
-  async getGeoDiseases(params?: { disease_class?: string; region?: string }): Promise<any[]> {
+  async getGeoDiseases(params?: { disease_class?: string; start_date?: string; end_date?: string }): Promise<any[]> {
     const res = await apiRequest<any>('/api/admin/geo-diseases', { method: 'GET', params });
     if (Array.isArray(res)) return res;
     if (Array.isArray(res?.cases)) return res.cases;
     if (Array.isArray(res?.geo_diseases)) return res.geo_diseases;
     return [];
+  },
+
+  async getGeoDiseaseMapData(params?: { disease_class?: string; start_date?: string; end_date?: string }): Promise<{ cases: any[]; summary: any }> {
+    const res = await apiRequest<any>('/api/admin/geo-diseases', {
+      method: 'GET',
+      params: { ...params, include_coverage: 'true' },
+    });
+    return {
+      cases: Array.isArray(res?.cases) ? res.cases : [],
+      summary: res?.summary || {},
+    };
   },
 
   async getComments(): Promise<any[]> {

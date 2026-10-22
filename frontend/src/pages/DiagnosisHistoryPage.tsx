@@ -300,10 +300,10 @@ export const DiagnosisHistoryPage: React.FC = () => {
                   <tr
                     key={item.key}
                     role={item.serverItem ? 'link' : undefined}
-                    tabIndex={item.serverItem ? 0 : undefined}
+                    tabIndex={item.serverItem ? 0 : -1}
                     aria-label={
                       item.serverItem
-                        ? `View diagnosis record ${item.recordId}`
+                        ? `Open diagnosis record ${item.recordId}`
                         : undefined
                     }
                     onClick={(event) => {
@@ -311,19 +311,31 @@ export const DiagnosisHistoryPage: React.FC = () => {
                         item.serverItem &&
                         !(event.target as HTMLElement).closest('a, button')
                       ) {
-                        navigate(`/farmer/history/${item.recordId}`);
+                        navigate(
+                          `/farmer/history/${encodeURIComponent(String(item.recordId))}`
+                        );
                       }
                     }}
                     onKeyDown={(event) => {
                       if (
-                        item.serverItem &&
-                        event.target === event.currentTarget &&
-                        event.key === 'Enter'
+                        !item.serverItem ||
+                        event.target !== event.currentTarget
                       ) {
-                        navigate(`/farmer/history/${item.recordId}`);
+                        return;
+                      }
+
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        navigate(
+                          `/farmer/history/${encodeURIComponent(String(item.recordId))}`
+                        );
                       }
                     }}
-                    className={`hover:bg-stone-50/80 dark:hover:bg-stone-800/40 transition-colors ${item.serverItem ? 'cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700' : ''}`}
+                    className={`hover:bg-stone-50/80 dark:hover:bg-stone-800/40 transition-colors ${
+                      item.serverItem
+                        ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-700'
+                        : ''
+                    }`}
                   >
                     <td className="py-2 px-4">
                       <HistoryImage
@@ -371,6 +383,7 @@ export const DiagnosisHistoryPage: React.FC = () => {
                         <div className="inline-flex items-center gap-3">
                           <Link
                             to={`/farmer/history/${item.recordId}`}
+                            onClick={(event) => event.stopPropagation()}
                             className="text-xs font-semibold text-emerald-800 dark:text-emerald-400 hover:underline whitespace-nowrap"
                           >
                             {t('viewDetails')}
@@ -378,7 +391,10 @@ export const DiagnosisHistoryPage: React.FC = () => {
 
                           <button
                             type="button"
-                            onClick={() => setDeleteTargetId(item.recordId)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setDeleteTargetId(item.recordId);
+                            }}
                             className="text-stone-400 hover:text-red-600 dark:hover:text-red-400 cursor-pointer"
                             aria-label={`Delete diagnosis record ${item.recordId}`}
                           >

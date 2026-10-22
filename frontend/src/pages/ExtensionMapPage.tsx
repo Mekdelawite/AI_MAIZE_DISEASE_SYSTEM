@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { MapPin, RefreshCw } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { EmptyState, ErrorState, LoadingSkeleton } from '../components/common/FeedbackStates';
+import { EthiopiaDiseaseMap, normalizeEthiopianRegionName, resolveEthiopianRegionName } from '../components/maps/EthiopiaDiseaseMap';
 import { AppShell } from '../components/layout/AppShell';
 import { useApp } from '../context/AppContext';
 import { extensionService } from '../services/extensionService';
@@ -8,176 +9,46 @@ import { formatConfidence, formatDateTime } from '../utils/media';
 
 export const ExtensionMapPage: React.FC = () => {
   const { t } = useApp();
-
   const [geoCases, setGeoCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [diseaseFilter, setDiseaseFilter] = useState('');
+  const [selectedRegion, setSelectedRegion] = useState('');
 
   const loadGeoData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const items = await extensionService.getGeoDiseases({
-        disease_class: diseaseFilter.trim() || undefined,
-      });
-      setGeoCases(items);
+      setGeoCases(await extensionService.getGeoDiseases({ disease_class: diseaseFilter || undefined }));
     } catch (err: any) {
-      setError(err?.message || 'Unable to load geographic disease records from /api/extension/geo-diseases.');
+      setError(err?.message || 'Unable to load geographic disease records.');
     } finally {
       setLoading(false);
     }
   }, [diseaseFilter]);
+  useEffect(() => { void loadGeoData(); }, [loadGeoData]);
 
-  useEffect(() => {
-    loadGeoData();
-  }, [loadGeoData]);
+  const diseases = useMemo(() => [...new Set(geoCases.map((item) => item.disease_class || item.class_name).filter(Boolean))].sort(), [geoCases]);
+  const regionCases = useMemo(() => geoCases.filter((item) => !selectedRegion || normalizeEthiopianRegionName(resolveEthiopianRegionName(item.region)) === normalizeEthiopianRegionName(resolveEthiopianRegionName(selectedRegion))), [geoCases, selectedRegion]);
+  const mappedCases = useMemo(() => regionCases.filter((item) => Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude))), [regionCases]);
 
-  // Filter items that have valid numeric latitude & longitude
-  const plottedPoints = geoCases.filter(
-    (item) =>
-      item.latitude !== undefined &&
-      item.latitude !== null &&
-      item.longitude !== undefined &&
-      item.longitude !== null &&
-      !Number.isNaN(Number(item.latitude)) &&
-      !Number.isNaN(Number(item.longitude))
-  );
-
-  // Ethiopian bounding box approximate normalization (Lat 3°N to 15°N, Lng 33°E to 48°E)
-  const projectPoint = (lat: number, lng: number) => {
-    const x = Math.max(4, Math.min(96, ((lng - 33) / (48 - 33)) * 100));
-    const y = Math.max(4, Math.min(96, 100 - ((lat - 3) / (15 - 3)) * 100));
-    return { x, y };
-  };
-
-  return (
-    <AppShell
-      title={t('navExtMap')}
-      subtitle="Geographic distribution of geo-tagged maize disease diagnoses from GET /api/extension/geo-diseases."
-      actions={
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            value={diseaseFilter}
-            onChange={(e) => setDiseaseFilter(e.target.value)}
-            placeholder="Filter disease class..."
-            className="px-3 py-1.5 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
-          />
-          <button
-            type="button"
-            onClick={loadGeoData}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-stone-700 dark:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>{t('refresh')}</span>
-          </button>
-        </div>
-      }
-    >
-      {loading ? (
-        <LoadingSkeleton rows={4} />
-      ) : error ? (
-        <ErrorState
-          title="Could not load geographic disease records"
-          message={error}
-          onRetry={loadGeoData}
-        />
-      ) : geoCases.length === 0 ? (
-        <EmptyState
-          title="No geo-tagged disease cases returned"
-          description="Diagnoses associated with farmer profiles that have saved latitude and longitude coordinates will appear here."
-        />
-      ) : (
-        <div className="space-y-6">
-          {/* Coordinate Spatial Plot (Ethiopia Bounding Box 3°N–15°N, 33°E–48°E) */}
-          <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-6">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-              <div>
-                <h2 className="text-base font-bold text-stone-900 dark:text-stone-100 font-display">
-                  Spatial Coordinate Projection (3°N–15°N, 33°E–48°E)
-                </h2>
-                <p className="text-xs text-stone-500 font-mono tabular-nums">
-                  {plottedPoints.length} of {geoCases.length} record(s) include valid GPS coordinates
-                </p>
-              </div>
-            </div>
-
-            <div className="relative h-80 w-full rounded-xl border border-stone-200 dark:border-stone-800 bg-[#F3F1EC] dark:bg-[#0D1511] overflow-hidden">
-              {/* Coordinate Grid Lines */}
-              <div className="absolute inset-0 grid grid-cols-6 grid-rows-4 pointer-events-none">
-                {Array.from({ length: 24 }).map((_, i) => (
-                  <div key={i} className="border-r border-b border-stone-300/40 dark:border-stone-800/60" />
-                ))}
-              </div>
-
-              {plottedPoints.map((pt, idx) => {
-                const { x, y } = projectPoint(Number(pt.latitude), Number(pt.longitude));
-                return (
-                  <div
-                    key={String(pt.id ?? idx)}
-                    style={{ left: `${x}%`, top: `${y}%` }}
-                    className="absolute -translate-x-1/2 -translate-y-1/2 group"
-                  >
-                    <MapPin className="w-5 h-5 text-emerald-800 dark:text-amber-400 drop-shadow-xs" />
-                    <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-20 w-48 rounded-lg bg-stone-900 text-white p-2.5 text-[11px] shadow-lg">
-                      <p className="font-semibold">{pt.disease_class || pt.class_name}</p>
-                      <p className="text-stone-300">
-                        {pt.region || ''} {pt.woreda ? `· ${pt.woreda}` : ''}
-                      </p>
-                      <p className="font-mono text-stone-400 mt-0.5">
-                        {Number(pt.latitude).toFixed(4)}, {Number(pt.longitude).toFixed(4)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Coordinate Table */}
-          <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-stone-200 dark:border-stone-800 text-xs font-semibold text-stone-500 bg-stone-50/60 dark:bg-stone-900/40">
-                    <th className="py-3 px-4">Disease Class</th>
-                    <th className="py-3 px-4">Region / Woreda</th>
-                    <th className="py-3 px-4 text-right">Latitude</th>
-                    <th className="py-3 px-4 text-right">Longitude</th>
-                    <th className="py-3 px-4 text-right">Confidence</th>
-                    <th className="py-3 px-4">Timestamp</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
-                  {geoCases.map((item, idx) => (
-                    <tr key={String(item.id ?? idx)}>
-                      <td className="py-3 px-4 font-semibold text-stone-900 dark:text-stone-100">
-                        {item.disease_class || item.class_name || '—'}
-                      </td>
-                      <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">
-                        {item.region || '—'} {item.woreda ? `· ${item.woreda}` : ''}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono tabular-nums text-xs">
-                        {item.latitude ?? '—'}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono tabular-nums text-xs">
-                        {item.longitude ?? '—'}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono tabular-nums text-xs text-emerald-800 dark:text-emerald-400">
-                        {formatConfidence(item.confidence)}
-                      </td>
-                      <td className="py-3 px-4 font-mono tabular-nums text-xs text-stone-500">
-                        {formatDateTime(item.created_at)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-    </AppShell>
-  );
+  return <AppShell title={t('navExtMap')} subtitle="Disease records in your assigned area, shown on Ethiopia’s administrative map."
+    actions={<div className="flex items-center gap-2">
+      <select value={diseaseFilter} onChange={(e) => setDiseaseFilter(e.target.value)} aria-label="Filter by disease type" className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs dark:border-stone-700 dark:bg-stone-900">
+        <option value="">All diseases</option>{diseases.map((disease) => <option key={disease} value={disease}>{disease}</option>)}
+      </select>
+      <button type="button" onClick={() => void loadGeoData()} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-300 px-3.5 py-2 text-xs font-medium text-stone-700 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-200 dark:hover:bg-stone-800"><RefreshCw className="h-3.5 w-3.5" />{t('refresh')}</button>
+    </div>}>
+    {loading ? <LoadingSkeleton rows={4} /> : error ? <ErrorState title="Could not load geographic disease records" message={error} onRetry={() => void loadGeoData()} /> : geoCases.length === 0 ? <EmptyState title="No geo-tagged disease cases returned" description="No diagnosis records are available for your assigned area and selected disease." /> : <div className="space-y-6">
+      <section className="rounded-xl border border-stone-200 bg-white p-5 dark:border-stone-800 dark:bg-[#121A16]">
+        <h2 className="mb-1 text-base font-bold text-stone-900 dark:text-stone-100">Ethiopia disease map</h2>
+        <p className="mb-3 text-xs text-stone-500">{mappedCases.length} of {regionCases.length} matching records have valid coordinates. Click a regional boundary to inspect it.</p>
+        <div className="mb-3 flex flex-wrap gap-4 text-xs text-stone-600 dark:text-stone-300"><span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-red-600" />Outbreak (5+ at same GPS point)</span><span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-yellow-500" />Moderate (2–4)</span><span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-green-600" />Low (1)</span></div>
+        <EthiopiaDiseaseMap cases={mappedCases} selectedRegion={selectedRegion} onSelectRegion={setSelectedRegion} />
+        {selectedRegion && <p className="mt-3 text-xs text-stone-600 dark:text-stone-300" aria-live="polite"><strong>{selectedRegion}</strong>: {regionCases.length} records, {mappedCases.length} with valid coordinates. <button className="ml-2 underline" onClick={() => setSelectedRegion('')}>Clear region</button></p>}
+        {!selectedRegion && geoCases.length > mappedCases.length && <p className="mt-3 text-xs text-stone-500">{geoCases.length - mappedCases.length} records are missing valid coordinates and are omitted from map markers.</p>}
+      </section>
+      <section className="overflow-hidden rounded-xl border border-stone-200 bg-white dark:border-stone-800 dark:bg-[#121A16]"><div className="overflow-x-auto"><table className="w-full border-collapse text-left text-sm"><thead><tr className="border-b bg-stone-50/60 text-xs text-stone-500 dark:bg-stone-900/40"><th className="px-4 py-3">Disease</th><th className="px-4 py-3">Farmer</th><th className="px-4 py-3">Region / Woreda</th><th className="px-4 py-3">Coordinates</th><th className="px-4 py-3">Confidence</th><th className="px-4 py-3">Timestamp</th></tr></thead><tbody className="divide-y divide-stone-200 dark:divide-stone-800">{regionCases.map((item, index) => <tr key={String(item.id ?? item.diagnosis_id ?? index)}><td className="px-4 py-3">{item.disease_class || item.class_name || '—'}</td><td className="px-4 py-3">{item.farmer_name || '—'}</td><td className="px-4 py-3">{[item.region, item.woreda].filter(Boolean).join(' · ') || '—'}</td><td className="px-4 py-3 font-mono text-xs">{item.latitude != null && item.longitude != null ? `${item.latitude}, ${item.longitude}` : '—'}</td><td className="px-4 py-3">{formatConfidence(item.confidence)}</td><td className="px-4 py-3">{formatDateTime(item.created_at)}</td></tr>)}</tbody></table></div></section>
+    </div>}
+  </AppShell>;
 };

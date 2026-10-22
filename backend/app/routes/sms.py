@@ -469,6 +469,7 @@ def send_disease_alert():
             kebele=data.get(
                 "kebele"
             ),
+            message=data.get("message"),
         )
 
     except Exception as error:
@@ -591,6 +592,7 @@ def send_outbreak_alert():
             kebele=data.get(
                 "kebele"
             ),
+            message=data.get("message"),
         )
 
     except Exception as error:

@@ -458,17 +458,20 @@ class SMSService:
         region: str | None = None,
         woreda: str | None = None,
         kebele: str | None = None,
+        message: str | None = None,
     ) -> dict[str, Any]:
         """Send a disease diagnosis alert."""
 
-        if language == "am":
-            message = (
+        if message and message.strip():
+            alert_message = message.strip()
+        elif language == "am":
+            alert_message = (
                 f"የበቆሎ በሽታ ተገኝቷል፦ {disease_name} "
                 f"({confidence:.2f}%). "
                 "እባክዎ ተገቢውን የህክምና ምክር ይከተሉ።"
             )
         else:
-            message = (
+            alert_message = (
                 f"Maize disease detected: {disease_name} "
                 f"({confidence:.2f}%). Please follow the "
                 "recommended treatment advice."
@@ -476,7 +479,7 @@ class SMSService:
 
         return cls.send_sms(
             recipient_phone,
-            message,
+            alert_message,
             recipient_type="farmer",
             notification_type="disease_alert",
             language=language,
@@ -503,18 +506,21 @@ class SMSService:
         woreda: str | None = None,
         kebele: str | None = None,
         outbreak_alert_id: int | None = None,
+        message: str | None = None,
     ) -> dict[str, Any]:
         """Send a disease outbreak alert."""
 
-        if language == "am":
-            message = (
+        if message and message.strip():
+            alert_message = message.strip()
+        elif language == "am":
+            alert_message = (
                 "የበቆሎ በሽታ ስርጭት ማስጠንቀቂያ፦ "
                 f"{disease_name} በ{location} ተመዝግቧል። "
                 "እባክዎ ሰብልዎን ይከታተሉ እና "
                 "ተገቢውን ምክር ይከተሉ።"
             )
         else:
-            message = (
+            alert_message = (
                 f"Maize disease outbreak alert: {disease_name} "
                 f"has been reported in {location}. "
                 "Please monitor your crops and follow the "
@@ -523,7 +529,7 @@ class SMSService:
 
         return cls.send_sms(
             recipient_phone,
-            message,
+            alert_message,
             recipient_type="farmer",
             notification_type="outbreak_alert",
             language=language,

@@ -5,11 +5,10 @@ import { PublicLayout } from '../components/layout/PublicLayout';
 import { getDefaultHomeForRole } from '../components/layout/ProtectedRoute';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { UserRole } from '../types/api';
 
 export const LoginPage: React.FC = () => {
   const { t, notify, apiBaseUrl, updateApiBaseUrl } = useApp();
-  const { login, setRoutePreviewRole } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -49,15 +48,6 @@ export const LoginPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleEnterPreviewRole = (role: UserRole) => {
-    setRoutePreviewRole(role);
-    notify(
-      `Entered ${role} workspace preview. All pages connect strictly to ${apiBaseUrl} without mock data.`,
-      'info'
-    );
-    navigate(getDefaultHomeForRole(role));
   };
 
   return (
@@ -204,29 +194,29 @@ export const LoginPage: React.FC = () => {
           <div className="pt-3 border-t border-stone-200/70 dark:border-stone-800">
             <div className="flex items-center gap-2 text-stone-700 dark:text-stone-300 font-medium mb-1">
               <Layout className="w-4 h-4 text-amber-600" />
-              <span>Workspace Route Inspector (No Mock Data)</span>
+              <span>Workspace Login Shortcuts</span>
             </div>
             <p className="text-stone-500 dark:text-stone-400 leading-relaxed mb-3">
-              If your local Windows Flask server is not currently running, you can inspect the role workspaces below. Every screen will still issue real requests to <code className="font-mono">{apiBaseUrl}</code>.
+              Choose a workspace below. You must sign in with an account authorized for that workspace before continuing.
             </p>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => handleEnterPreviewRole('farmer')}
+              onClick={() => navigate('/farmer/dashboard')}
                 className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer whitespace-nowrap"
               >
                 Farmer UI
               </button>
               <button
                 type="button"
-                onClick={() => handleEnterPreviewRole('extension_agent')}
+                onClick={() => navigate('/extension/dashboard')}
                 className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer whitespace-nowrap"
               >
                 Extension UI
               </button>
               <button
                 type="button"
-                onClick={() => handleEnterPreviewRole('admin')}
+                onClick={() => navigate('/admin/dashboard')}
                 className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer whitespace-nowrap"
               >
                 Admin UI

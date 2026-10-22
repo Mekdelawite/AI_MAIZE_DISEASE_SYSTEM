@@ -18,6 +18,7 @@ from backend.app.models.discussion_reply import DiscussionReply
 from backend.app.models.discussion_post_like import DiscussionPostLike
 from backend.app.models.offline_sync_record import OfflineSyncRecord
 from backend.app.models.pending_registration import PendingRegistration
+from backend.app.models.farmer_notification import FarmerNotification
 __all__ = [
     "User",
     "DiagnosisRecord",
@@ -33,4 +34,5 @@ __all__ = [
     "DiscussionPostLike",
     "OfflineSyncRecord",
     "PendingRegistration",
+    "FarmerNotification",
 ]

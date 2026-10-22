@@ -366,11 +366,15 @@ class DiagnosisAdvisoryIntegrationService:
         # READINESS
         # =================================================
 
-        if not self.is_ready():
+        diagnosis_ready = self._diagnosis_service.is_ready()
+        advisor_ready = self._advisor_service.is_ready()
+
+        if not diagnosis_ready or not advisor_ready:
 
             raise DiagnosisAdvisoryError(
-                "Diagnosis and advisory services "
-                "are not ready."
+                "Diagnosis workflow is not ready "
+                f"(diagnosis={diagnosis_ready}, "
+                f"advisory={advisor_ready})."
             )
 
         # =================================================

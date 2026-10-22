@@ -10,6 +10,23 @@ export interface ExtensionDiagnosesFilter {
   limit?: number;
 }
 
+function normalizeDiagnosis(item: any): DiagnosisHistoryItem {
+  const farmer = item?.farmer || {};
+  const location = item?.farmer_location || item?.location || {};
+
+  return {
+    ...item,
+    id: item?.id ?? item?.diagnosis_id,
+    diagnosis_id: item?.diagnosis_id ?? item?.id,
+    farmer_name: item?.farmer_name ?? farmer.full_name ?? farmer.name,
+    farmer_phone: item?.farmer_phone ?? farmer.phone_number ?? farmer.phone,
+    region: item?.region ?? location.region,
+    woreda: item?.woreda ?? location.woreda,
+    kebele: item?.kebele ?? location.kebele,
+    heatmap_url: item?.heatmap_url ?? item?.heatmap_path,
+  };
+}
+
 export const extensionService = {
   async getDashboard(): Promise<any> {
     return apiRequest<any>('/api/extension/dashboard', {
@@ -26,17 +43,18 @@ export const extensionService = {
       params: filters as Record<string, string | number | undefined>,
     });
 
-    const items = Array.isArray(res)
+    const rawItems = Array.isArray(res)
       ? res
       : Array.isArray(res?.diagnoses)
       ? res.diagnoses
       : Array.isArray(res?.items)
       ? res.items
       : [];
+    const items = rawItems.map(normalizeDiagnosis);
 
     return {
       items,
-      total: Number(res?.total ?? items.length),
+      total: Number(res?.total ?? res?.pagination?.total ?? items.length),
     };
   },
 
@@ -44,7 +62,7 @@ export const extensionService = {
     const res = await apiRequest<any>(`/api/extension/diagnoses/${encodeURIComponent(String(diagnosisId))}`, {
       method: 'GET',
     });
-    return res?.diagnosis || res;
+    return normalizeDiagnosis(res?.diagnosis || res);
   },
 
   async getGeoDiseases(filters?: { disease_class?: string; start_date?: string; end_date?: string }): Promise<any[]> {
@@ -52,10 +70,16 @@ export const extensionService = {
       method: 'GET',
       params: filters,
     });
-    if (Array.isArray(res)) return res;
-    if (Array.isArray(res?.cases)) return res.cases;
-    if (Array.isArray(res?.locations)) return res.locations;
-    if (Array.isArray(res?.geo_diseases)) return res.geo_diseases;
-    return [];
+    const items = Array.isArray(res)
+      ? res
+      : Array.isArray(res?.cases)
+      ? res.cases
+      : Array.isArray(res?.locations)
+      ? res.locations
+      : Array.isArray(res?.geo_diseases)
+      ? res.geo_diseases
+      : [];
+
+    return items.map((item: any) => normalizeDiagnosis(item));
   },
 };

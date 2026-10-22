@@ -336,6 +336,12 @@ def _serialize_diagnosis(
                 if farmer_profile
                 else None
             ),
+
+            "kebele": (
+                farmer_profile.kebele
+                if farmer_profile
+                else None
+            ),
         },
 
         "image_filename": (

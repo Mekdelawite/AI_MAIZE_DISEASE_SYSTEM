@@ -16,7 +16,33 @@ Project: AI Maize Disease Detection System
 
 from pathlib import Path
 from threading import Lock
+import os
 import sys
+
+# Some Windows launch environments omit System32 from PATH. TensorFlow's
+# native extensions still need the Microsoft runtime DLLs stored there.
+_DLL_DIRECTORY_HANDLES = []
+if os.name == "nt" and hasattr(os, "add_dll_directory"):
+    system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+    system_dll_directory = system_root / "System32"
+    if system_dll_directory.is_dir():
+        system_dll_path = str(system_dll_directory)
+        current_path_entries = {
+            entry.rstrip("\\/").casefold()
+            for entry in os.environ.get("PATH", "").split(os.pathsep)
+            if entry
+        }
+        if system_dll_path.rstrip("\\/").casefold() not in current_path_entries:
+            os.environ["PATH"] = os.pathsep.join(
+                [system_dll_path, os.environ.get("PATH", "")]
+            )
+        _DLL_DIRECTORY_HANDLES.append(
+            os.add_dll_directory(system_dll_path)
+        )
+        print(
+            "[DIAGNOSIS SERVICE] Registered Windows runtime DLL path:",
+            system_dll_path,
+        )
 
 import numpy as np
 import tensorflow as tf
@@ -64,11 +90,15 @@ class DiseasePredictor:
 
             if cls._instance is None:
 
-                cls._instance = super().__new__(cls)
+                instance = super().__new__(cls)
 
-                cls._instance._explainability_adapter = None
+                instance._explainability_adapter = None
 
-                cls._instance._load_model()
+                instance._load_model()
+
+                # Cache only a fully initialized predictor. If model loading
+                # fails, the next request can retry cleanly.
+                cls._instance = instance
 
         return cls._instance
 
@@ -83,7 +113,8 @@ class DiseasePredictor:
             print("Loading AI model...")
 
             self.model = tf.keras.models.load_model(
-                MODEL_PATH
+                MODEL_PATH,
+                compile=False,
             )
 
             print("Model loaded successfully.")

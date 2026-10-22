@@ -19,8 +19,11 @@ export const UserManagementPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
+  const [regionFilter, setRegionFilter] = useState('');
+  const [kebeleFilter, setKebeleFilter] = useState('');
 
   // Status Toggle Confirmation
   const [pendingToggleUser, setPendingToggleUser] = useState<UserRecord | null>(null);
@@ -32,6 +35,8 @@ export const UserManagementPage: React.FC = () => {
     try {
       const list = await adminService.getUsers({
         role: roleFilter || undefined,
+        region: regionFilter.trim() || undefined,
+        kebele: kebeleFilter || undefined,
         search: search.trim() || undefined,
       });
       setUsers(list);
@@ -40,11 +45,19 @@ export const UserManagementPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [roleFilter, search]);
+  }, [roleFilter, regionFilter, kebeleFilter, search]);
 
   useEffect(() => {
     loadUsers();
   }, [loadUsers]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setSearch(searchInput.trim());
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchInput]);
 
   const handleConfirmToggleStatus = async () => {
     if (!pendingToggleUser) return;
@@ -70,7 +83,6 @@ export const UserManagementPage: React.FC = () => {
   return (
     <AppShell
       title={t('navAdminUsers')}
-      subtitle="Inspect user accounts and manage active status via GET /api/admin/users and PATCH /api/admin/users/<id>/status."
       actions={
         <button
           type="button"
@@ -87,7 +99,12 @@ export const UserManagementPage: React.FC = () => {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            loadUsers();
+            const nextSearch = searchInput.trim();
+            if (nextSearch === search) {
+              void loadUsers();
+            } else {
+              setSearch(nextSearch);
+            }
           }}
           className="flex items-center gap-2 flex-1 min-w-[240px]"
         >
@@ -95,9 +112,9 @@ export const UserManagementPage: React.FC = () => {
             <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by full name or phone number..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search by name, phone, role, or region..."
               className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
             />
           </div>
@@ -120,6 +137,22 @@ export const UserManagementPage: React.FC = () => {
           <option value="extension_agent">Extension Agent</option>
           <option value="admin">Admin</option>
         </select>
+        <input
+          type="text"
+          value={regionFilter}
+          onChange={(e) => setRegionFilter(e.target.value)}
+          aria-label="Filter by region"
+          placeholder="Filter by region"
+          className="px-3 py-1.5 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
+        />
+        <input
+          type="text"
+          value={kebeleFilter}
+          onChange={(e) => setKebeleFilter(e.target.value)}
+          aria-label="Filter by kebele"
+          placeholder="Filter by kebele"
+          className="px-3 py-1.5 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
+        />
       </div>
 
       {loading ? (
@@ -140,7 +173,9 @@ export const UserManagementPage: React.FC = () => {
                   <th className="py-3 px-4">ID</th>
                   <th className="py-3 px-4">Full Name</th>
                   <th className="py-3 px-4">Phone Number</th>
-                  <th className="py-3 px-4">Role · Region</th>
+                  <th className="py-3 px-4">Role</th>
+                  <th className="py-3 px-4">Region</th>
+                  <th className="py-3 px-4">Kebele</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4">Created</th>
                   <th className="py-3 px-4 text-right">Action</th>
@@ -162,8 +197,9 @@ export const UserManagementPage: React.FC = () => {
                       </td>
                       <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">
                         <span className="font-medium text-stone-900 dark:text-stone-100">{u.role}</span>
-                        {u.region ? ` · ${u.region}` : ''}
                       </td>
+                      <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">{u.region || '—'}</td>
+                      <td className="py-3 px-4 text-xs text-stone-600 dark:text-stone-400">{u.kebele || '—'}</td>
                       <td className="py-3 px-4 text-xs font-medium">
                         {isActive ? (
                           <span className="text-emerald-800 dark:text-emerald-400">Active</span>

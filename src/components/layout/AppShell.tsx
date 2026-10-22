@@ -70,6 +70,7 @@ export const AppShell: React.FC<{
     { to: '/admin/users', labelKey: 'navAdminUsers', icon: Users },
     { to: '/admin/farmers', labelKey: 'navAdminFarmers', icon: User },
     { to: '/admin/extension-agents', labelKey: 'navAdminAgents', icon: ShieldAlert },
+    { to: '/admin/geo-diseases', labelKey: 'navAdminGeoMap', icon: MapPin },
     { to: '/admin/outbreaks', labelKey: 'navAdminOutbreaks', icon: AlertOctagon },
     { to: '/admin/reports', labelKey: 'navAdminReports', icon: FileSpreadsheet },
     { to: '/farmer/discussion', labelKey: 'navDiscussion', icon: MessageSquare },

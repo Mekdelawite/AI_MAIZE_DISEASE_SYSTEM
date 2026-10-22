@@ -395,9 +395,7 @@ def get_outbreak_alerts():
 
     query = OutbreakAlert.query
 
-    disease_class = request.args.get(
-        "disease_class"
-    )
+    disease_class = request.args.get("disease_class", "").strip()
 
     region = request.args.get("region")
     woreda = request.args.get("woreda")
@@ -408,7 +406,7 @@ def get_outbreak_alerts():
 
     if disease_class:
         query = query.filter(
-            OutbreakAlert.disease_class == disease_class
+            OutbreakAlert.disease_class.ilike(f"%{disease_class}%")
         )
 
     if region:

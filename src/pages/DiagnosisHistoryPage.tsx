@@ -110,13 +110,30 @@ export const DiagnosisHistoryPage: React.FC = () => {
                   return (
                     <tr
                       key={String(recordId)}
-                      className="hover:bg-stone-50/80 dark:hover:bg-stone-800/40 transition-colors"
+                      tabIndex={0}
+                      aria-label={`Open diagnosis record ${recordId}`}
+                      onClick={() => navigate(`/farmer/history/${encodeURIComponent(String(recordId))}`)}
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return;
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          navigate(`/farmer/history/${encodeURIComponent(String(recordId))}`);
+                        }
+                      }}
+                      className="cursor-pointer hover:bg-stone-50/80 dark:hover:bg-stone-800/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-700 transition-colors"
                     >
                       <td className="py-3.5 px-4 font-mono tabular-nums text-xs text-stone-500">
                         #{recordId}
                       </td>
                       <td className="py-3.5 px-4 font-semibold text-stone-900 dark:text-stone-100">
-                        {item.disease_class || item.class_name || 'Unknown'}
+                        <Link
+                          to={`/farmer/history/${encodeURIComponent(String(recordId))}`}
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label={`View diagnosis record ${recordId}: ${item.disease_class || item.class_name || 'Unknown'}`}
+                          className="rounded-sm hover:text-emerald-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 dark:hover:text-emerald-400"
+                        >
+                          {item.disease_class || item.class_name || 'Unknown'}
+                        </Link>
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono tabular-nums text-emerald-800 dark:text-emerald-400 font-medium">
                         {formatConfidence(item.confidence)}
@@ -131,13 +148,17 @@ export const DiagnosisHistoryPage: React.FC = () => {
                         <div className="inline-flex items-center gap-3">
                           <Link
                             to={`/farmer/history/${recordId}`}
+                            onClick={(event) => event.stopPropagation()}
                             className="text-xs font-semibold text-emerald-800 dark:text-emerald-400 hover:underline whitespace-nowrap"
                           >
                             {t('viewDetails')}
                           </Link>
                           <button
                             type="button"
-                            onClick={() => setDeleteTargetId(recordId)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setDeleteTargetId(recordId);
+                            }}
                             className="text-stone-400 hover:text-red-600 dark:hover:text-red-400 cursor-pointer"
                             aria-label={`Delete diagnosis record ${recordId}`}
                           >

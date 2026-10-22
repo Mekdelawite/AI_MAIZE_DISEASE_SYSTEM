@@ -76,6 +76,7 @@ export const AdminDashboardPage: React.FC = () => {
 
   const diseaseChartData = React.useMemo(() => {
     const raw =
+      dashboard?.diagnoses?.by_disease ||
       dashboard?.disease_distribution ||
       dashboard?.diseases ||
       dashboard?.by_disease;
@@ -95,13 +96,23 @@ export const AdminDashboardPage: React.FC = () => {
     return [];
   }, [dashboard]);
 
-  const totalUsers = dashboard?.total_users ?? dashboard?.users_count ?? dashboard?.summary?.total_users;
-  const totalFarmers = dashboard?.total_farmers ?? dashboard?.farmers_count ?? dashboard?.summary?.total_farmers;
+  const totalUsers =
+    dashboard?.users?.total ??
+    dashboard?.total_users ??
+    dashboard?.users_count ??
+    dashboard?.summary?.total_users;
+  const totalFarmers =
+    dashboard?.users?.farmers ??
+    dashboard?.total_farmers ??
+    dashboard?.farmers_count ??
+    dashboard?.summary?.total_farmers;
   const totalAgents =
+    dashboard?.users?.extension_agents ??
     dashboard?.total_extension_agents ??
     dashboard?.extension_agents_count ??
     dashboard?.summary?.total_extension_agents;
   const totalDiagnoses =
+    dashboard?.diagnoses?.total ??
     dashboard?.total_diagnoses ?? dashboard?.diagnoses_count ?? dashboard?.summary?.total_diagnoses;
 
   return (

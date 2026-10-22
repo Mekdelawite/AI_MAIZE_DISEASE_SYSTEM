@@ -34,7 +34,7 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import (
     get_jwt_identity,
     jwt_required,
@@ -406,6 +406,11 @@ def complete_diagnosis():
 
     except DiagnosisAdvisoryError as error:
 
+        print(
+            "Complete diagnosis failed:",
+            str(error),
+        )
+
         return jsonify(
             {
                 "success": False,
@@ -427,9 +432,9 @@ def complete_diagnosis():
         # Keep the API response safe while allowing the
         # actual exception to appear in the Flask console.
 
-        print(
-            "Complete diagnosis unexpected error:",
-            repr(error),
+        current_app.logger.exception(
+            "Complete diagnosis unexpected error: %s",
+            error,
         )
 
         return jsonify(

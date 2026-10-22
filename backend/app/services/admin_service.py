@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+from sqlalchemy.orm import joinedload
 
 from backend.app.extensions import db
 
@@ -120,6 +121,18 @@ class AdminService:
             "phone_number": user.phone_number,
             "full_name": user.full_name,
             "role": user.role,
+            "region": (
+                user.farmer_profile.region
+                if user.farmer_profile
+                else user.extension_agent_profile.region
+                if user.extension_agent_profile
+                else None
+            ),
+            "kebele": (
+                user.farmer_profile.kebele
+                if user.farmer_profile
+                else None
+            ),
             "preferred_language": user.preferred_language,
             "is_active": bool(user.is_active),
             "created_at": (
@@ -146,16 +159,58 @@ class AdminService:
     @classmethod
     def get_all_users(
         cls,
+        *,
+        role: str | None = None,
+        region: str | None = None,
+        kebele: str | None = None,
+        search: str | None = None,
     ) -> list[dict[str, Any]]:
         """
-        Retrieve all registered users.
+        Retrieve users with optional role, region, and kebele filters plus
+        search across name, phone, role, and region.
         """
 
-        users = (
-            User.query
-            .order_by(User.created_at.desc())
-            .all()
+        query = User.query.options(
+            joinedload(User.farmer_profile),
+            joinedload(User.extension_agent_profile),
+        ).outerjoin(
+            FarmerProfile,
+            FarmerProfile.user_id == User.id,
+        ).outerjoin(
+            ExtensionAgent,
+            ExtensionAgent.user_id == User.id,
         )
+
+        if role:
+            query = query.filter(User.role == role)
+
+        if search:
+            pattern = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    User.full_name.ilike(pattern),
+                    User.phone_number.ilike(pattern),
+                    User.role.ilike(pattern),
+                    FarmerProfile.region.ilike(pattern),
+                    ExtensionAgent.region.ilike(pattern),
+                )
+            )
+
+        if region:
+            region_pattern = f"%{region}%"
+            query = query.filter(
+                db.or_(
+                    FarmerProfile.region.ilike(region_pattern),
+                    ExtensionAgent.region.ilike(region_pattern),
+                )
+            )
+
+        if kebele:
+            query = query.filter(
+                FarmerProfile.kebele.ilike(f"%{kebele}%")
+            )
+
+        users = query.order_by(User.created_at.desc()).all()
 
         return [
             cls.user_to_dict(user)
@@ -169,18 +224,41 @@ class AdminService:
     @classmethod
     def get_all_farmers(
         cls,
+        *,
+        search: str | None = None,
+        region: str | None = None,
+        woreda: str | None = None,
+        kebele: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         Retrieve all farmer accounts together with
         their agricultural profiles.
         """
 
-        users = (
+        query = (
             User.query
-            .filter_by(role="farmer")
-            .order_by(User.created_at.desc())
-            .all()
+            .outerjoin(
+                FarmerProfile,
+                FarmerProfile.user_id == User.id,
+            )
+            .filter(User.role == "farmer")
         )
+
+        if search:
+            pattern = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    User.full_name.ilike(pattern),
+                    User.phone_number.ilike(pattern),
+                    FarmerProfile.kebele.ilike(pattern),
+                )
+            )
+
+        for field, value in ((FarmerProfile.region, region), (FarmerProfile.woreda, woreda), (FarmerProfile.kebele, kebele)):
+            if value:
+                query = query.filter(field.ilike(f"%{value}%"))
+
+        users = query.order_by(User.created_at.desc()).all()
 
         farmers: list[dict[str, Any]] = []
 
@@ -217,6 +295,11 @@ class AdminService:
                 else None
             )
 
+            farmer["region"] = profile.region if profile else None
+            farmer["woreda"] = profile.woreda if profile else None
+            farmer["kebele"] = profile.kebele if profile else None
+            farmer["sms_opt_in"] = bool(profile.sms_opt_in) if profile else False
+
             farmers.append(farmer)
 
         return farmers
@@ -228,6 +311,10 @@ class AdminService:
     @classmethod
     def get_all_extension_agents(
         cls,
+        *,
+        search: str | None = None,
+        region: str | None = None,
+        woreda: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         Retrieve all extension-agent accounts together
@@ -240,9 +327,24 @@ class AdminService:
                 User,
                 ExtensionAgent.user_id == User.id,
             )
-            .order_by(User.created_at.desc())
-            .all()
         )
+
+        if search:
+            pattern = f"%{search}%"
+            agents = agents.filter(
+                db.or_(
+                    User.full_name.ilike(pattern),
+                    User.phone_number.ilike(pattern),
+                )
+            )
+
+        if region:
+            agents = agents.filter(ExtensionAgent.region.ilike(f"%{region}%"))
+
+        if woreda:
+            agents = agents.filter(ExtensionAgent.woreda.ilike(f"%{woreda}%"))
+
+        agents = agents.order_by(User.created_at.desc()).all()
 
         result: list[dict[str, Any]] = []
 
@@ -941,7 +1043,8 @@ class AdminService:
         disease_class: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
-    ) -> list[dict[str, Any]]:
+        include_coverage: bool = False,
+    ) -> list[dict[str, Any]] | dict[str, Any]:
         """
         Retrieve geographically located diagnosis cases
         across all farmer regions.
@@ -966,6 +1069,9 @@ class AdminService:
         )
 
         cases: list[dict[str, Any]] = []
+        total_farmer_diagnoses = 0
+        unlocated_diagnoses = 0
+        region_coverage: dict[str, dict[str, int]] = {}
 
         # -------------------------------------------------
         # BUILD GEO CASES
@@ -988,6 +1094,8 @@ class AdminService:
             if user.role != "farmer":
                 continue
 
+            total_farmer_diagnoses += 1
+
             profile = (
                 FarmerProfile.query
                 .filter_by(
@@ -996,15 +1104,27 @@ class AdminService:
                 .first()
             )
 
-            if profile is None:
-                continue
+            region_name = (
+                profile.region.strip()
+                if profile and profile.region
+                else "Unknown region"
+            )
+            coverage = region_coverage.setdefault(
+                region_name,
+                {"total_diagnoses": 0, "mapped_cases": 0, "missing_coordinates": 0},
+            )
+            coverage["total_diagnoses"] += 1
 
             # Both coordinates are required.
-            if (
+            if profile is None or (
                 profile.latitude is None
                 or profile.longitude is None
             ):
+                unlocated_diagnoses += 1
+                coverage["missing_coordinates"] += 1
                 continue
+
+            coverage["mapped_cases"] += 1
 
             cases.append(
                 {
@@ -1036,7 +1156,21 @@ class AdminService:
                 }
             )
 
-        return cases
+        if not include_coverage:
+            return cases
+
+        return {
+            "cases": cases,
+            "summary": {
+                "total_farmer_diagnoses": total_farmer_diagnoses,
+                "mapped_cases": len(cases),
+                "missing_coordinates": unlocated_diagnoses,
+                "by_region": [
+                    {"region": region, **counts}
+                    for region, counts in sorted(region_coverage.items())
+                ],
+            },
+        }
 
     # =====================================================
     # ADMIN DASHBOARD

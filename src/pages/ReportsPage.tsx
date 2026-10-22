@@ -140,10 +140,6 @@ export const ReportsPage: React.FC = () => {
               <h2 className="text-lg font-bold text-stone-900 dark:text-stone-100 font-display">
                 Administrative Diagnostic Reports
               </h2>
-              <p className="mt-1 text-xs text-stone-500">
-                Endpoints: <code className="font-mono">GET /api/admin/reports/pdf</code> &{' '}
-                <code className="font-mono">GET /api/admin/reports/csv</code>
-              </p>
             </div>
 
             <div className="space-y-4">
