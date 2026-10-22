@@ -67,3 +67,14 @@ Thumbs.db
 /python_tls_check.py
 /sms_tls_check.py
 /project_structure.txt
+
+
+# Maize validity classifier training data and downloaded datasets
+/ml_model/validity_classifier/dataset/
+/ml_model/validity_classifier/split/
+/ml_model/validity_classifier/split_dataset_incomplete/
+/ml_model/validity_classifier/PlantDoc-Dataset-master/
+/ml_model/validity_classifier/PlantDoc.zip
+
+# Private application letters and personal photos
+/database/

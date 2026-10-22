@@ -22,7 +22,7 @@ import { localDiagnosisService, type LocalDiagnosisResult } from '../services/lo
 import { syncService } from '../services/syncService';
 import type { QueuedSyncItem } from '../types/api';
 import { formatDateTime } from '../utils/media';
-
+import { ApiError } from '../services/api';
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 const ALLOWED_TYPES = [
@@ -55,7 +55,6 @@ export default function DiagnosisPage() {
   const [slowRequestWarning, setSlowRequestWarning] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [localAnalyzing, setLocalAnalyzing] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
   const [localResult, setLocalResult] = useState<LocalDiagnosisResult | null>(null);
   const [modelCached, setModelCached] = useState<boolean | null>(null);
 
@@ -91,7 +90,6 @@ export default function DiagnosisPage() {
 
   const validateAndSelectFile = (file: File) => {
     setErrorMsg(null);
-    setLocalError(null);
     setLocalResult(null);
 
     const validType = ALLOWED_TYPES.includes(file.type);
@@ -159,7 +157,6 @@ export default function DiagnosisPage() {
     setSelectedFile(null);
     setPreviewUrl(null);
     setErrorMsg(null);
-    setLocalError(null);
     setLocalResult(null);
 
     if (galleryInputRef.current) {
@@ -247,17 +244,18 @@ export default function DiagnosisPage() {
   ) => {
     event.preventDefault();
 
-    if (!selectedFile || analyzing || !isOnline) {
+    if (!selectedFile || analyzing) {
       if (!selectedFile) {
         setErrorMsg('Please upload or capture a maize leaf image first.');
-      } else if (!isOnline) {
-        setErrorMsg(t('onlineDiagnosisNeedsInternet'));
       }
       return;
     }
 
+    const imageFile = selectedFile;
     setAnalyzing(true);
+    setLocalAnalyzing(false);
     setErrorMsg(null);
+    setLocalResult(null);
     setSlowRequestWarning(false);
 
     const warningTimer = window.setTimeout(() => {
@@ -265,50 +263,62 @@ export default function DiagnosisPage() {
     }, 8000);
 
     try {
-      const result = await diagnosisService.runCompleteDiagnosis({
-        image: selectedFile,
-        language: diagnosisLanguage,
-        explain,
-      });
+      await localDiagnosisService.validateImage(imageFile);
 
-      notify('Diagnosis completed successfully.', 'success');
+      if (!isOnline) {
+        setLocalAnalyzing(true);
+        const result = await localDiagnosisService.predict(imageFile, user?.id);
+        setLocalResult(result);
+        setModelCached(await localDiagnosisService.isModelCached());
+        notify('Offline diagnosis completed using the local model.', 'success');
+        return;
+      }
 
-      navigate('/farmer/diagnose/result', {
-        state: {
-          result,
-          uploadedPreviewUrl: previewUrl,
-          requestLanguage: diagnosisLanguage,
-          requestedExplain: explain,
-        },
-      });
+      try {
+        const result = await diagnosisService.runCompleteDiagnosis({
+          image: imageFile,
+          language: diagnosisLanguage,
+          explain,
+        });
+
+        notify('Online diagnosis completed successfully.', 'success');
+
+        navigate('/farmer/diagnose/result', {
+          state: {
+            result,
+            uploadedPreviewUrl: previewUrl,
+            requestLanguage: diagnosisLanguage,
+            requestedExplain: explain,
+            diagnosisMode: 'online',
+          },
+        });
+        return;
+      } catch (error: unknown) {
+        if (!(error instanceof ApiError) || !error.isNetworkError) {
+          throw error;
+        }
+      }
+
+      setLocalAnalyzing(true);
+      const result = await localDiagnosisService.predict(imageFile, user?.id);
+      setLocalResult(result);
+      setModelCached(await localDiagnosisService.isModelCached());
+      notify(
+        'Backend unavailable. Diagnosis completed using the local model.',
+        'success',
+      );
     } catch (error: unknown) {
-      const message =
+      setErrorMsg(
         error instanceof Error
           ? error.message
-          : 'Diagnosis failed. Please try again.';
-
-      setErrorMsg(message);
+          : 'Diagnosis failed. Please try again.',
+      );
+      setModelCached(await localDiagnosisService.isModelCached());
     } finally {
       window.clearTimeout(warningTimer);
       setAnalyzing(false);
-      setSlowRequestWarning(false);
-    }
-  };
-
-  const handleLocalDiagnosis = async () => {
-    if (!selectedFile || localAnalyzing || analyzing) return;
-    setLocalAnalyzing(true);
-    setLocalError(null);
-    setLocalResult(null);
-    try {
-      const result = await localDiagnosisService.predict(selectedFile);
-      setLocalResult(result);
-      setModelCached(true);
-    } catch (error: unknown) {
-      setLocalError(error instanceof Error ? error.message : t('localDiagnosisFailed'));
-      setModelCached(await localDiagnosisService.isModelCached().catch(() => false));
-    } finally {
       setLocalAnalyzing(false);
+      setSlowRequestWarning(false);
     }
   };
 
@@ -659,52 +669,37 @@ export default function DiagnosisPage() {
             )}
 
             {/* Main actions */}
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                type="submit"
-                disabled={!selectedFile || analyzing || localAnalyzing || !isOnline}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-900 hover:bg-emerald-800 text-white px-5 py-3 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {analyzing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Analyzing image...
-                  </>
-                ) : (
-                  <>
-                    <ScanLine className="w-4 h-4" />
-                    {t('onlineDiagnosisBtn')}
-                  </>
-                )}
-              </button>
+<div className="flex flex-col sm:flex-row gap-3">
+  <button
+    type="submit"
+    disabled={!selectedFile || analyzing || localAnalyzing}
+    className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-900 hover:bg-emerald-800 text-white px-5 py-3 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+  >
+    {analyzing || localAnalyzing ? (
+      <>
+        <Loader2 className="w-4 h-4 animate-spin" />
+        {localAnalyzing
+          ? 'Running local diagnosis...'
+          : 'Checking connection and diagnosing...'}
+      </>
+    ) : (
+      <>
+        <ScanLine className="w-4 h-4" />
+        Diagnose
+      </>
+    )}
+  </button>
 
-              <button
-                type="button"
-                disabled={!selectedFile || analyzing || localAnalyzing}
-                onClick={handleLocalDiagnosis}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-800 text-emerald-900 dark:text-emerald-300 dark:border-emerald-700 px-5 py-3 text-sm font-semibold hover:bg-emerald-50 dark:hover:bg-emerald-950/30 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {localAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanLine className="w-4 h-4" />}
-                {localAnalyzing ? t('localDiagnosisRunning') : t('localDiagnosisBtn')}
-              </button>
-
-              <button
-                type="button"
-                disabled={!selectedFile || analyzing || localAnalyzing}
-                onClick={handleQueueOffline}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-stone-300 dark:border-stone-700 text-stone-800 dark:text-stone-200 px-5 py-3 text-sm font-semibold hover:bg-stone-50 dark:hover:bg-stone-800 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <WifiOff className="w-4 h-4" />
-                Save for Later
-              </button>
-            </div>
-
-            {localError && (
-              <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-                <p>{localError}</p>
-                {!modelCached && <p className="mt-1">{t('modelNeedsDownload')}</p>}
-              </div>
-            )}
+  <button
+    type="button"
+    disabled={!selectedFile || analyzing || localAnalyzing}
+    onClick={handleQueueOffline}
+    className="inline-flex items-center justify-center gap-2 rounded-lg border border-stone-300 dark:border-stone-700 text-stone-800 dark:text-stone-200 px-5 py-3 text-sm font-semibold hover:bg-stone-50 dark:hover:bg-stone-800 disabled:opacity-50 disabled:cursor-not-allowed"
+  >
+    <WifiOff className="w-4 h-4" />
+    Save for Later
+  </button>
+</div>
 
             {localResult && (
               <section className="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/70 dark:bg-emerald-950/20 p-5" aria-live="polite">

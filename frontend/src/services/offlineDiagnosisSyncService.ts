@@ -88,10 +88,11 @@ async function compressImageForSync(image: Blob): Promise<Blob> {
  * Records remain pending unless the backend confirms completion.
  */
 export async function syncPendingDiagnoses(
+  userId: string | number,
   language: 'en' | 'am' = 'en',
 ): Promise<OfflineSyncSummary> {
   if (!navigator.onLine) {
-    const pending = await offlineDiagnosisStore.getPending();
+    const pending = await offlineDiagnosisStore.getPending(userId);
 
     return {
       synced: 0,
@@ -99,7 +100,7 @@ export async function syncPendingDiagnoses(
     };
   }
 
-  const pendingRecords = await offlineDiagnosisStore.getPending();
+  const pendingRecords = await offlineDiagnosisStore.getPending(userId);
   let synced = 0;
 
   // Stop processing the queue when a record fails.
@@ -147,7 +148,7 @@ export async function syncPendingDiagnoses(
     }
   }
 
-  const remaining = (await offlineDiagnosisStore.getPending()).length;
+  const remaining = (await offlineDiagnosisStore.getPending(userId)).length;
 
   return {
     synced,

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Edit3, MapPin, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Edit3, MapPin, RefreshCw, WifiOff } from 'lucide-react';
 import { ErrorState, LoadingSkeleton } from '../components/common/FeedbackStates';
 import { AppShell } from '../components/layout/AppShell';
 import { useApp } from '../context/AppContext';
@@ -7,9 +7,37 @@ import { useAuth } from '../context/AuthContext';
 import { profileService } from '../services/profileService';
 import { ProfileResponseData } from '../types/api';
 
+const PROFILE_CACHE_PREFIX = 'maizecare_profile_v1_';
+
+function readCachedProfile(userId: string | number | undefined): ProfileResponseData | null {
+  if (userId === undefined) return null;
+
+  try {
+    const cached = localStorage.getItem(`${PROFILE_CACHE_PREFIX}${userId}`);
+    if (!cached) return null;
+
+    const parsed: unknown = JSON.parse(cached);
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      !('user' in parsed) ||
+      typeof parsed.user !== 'object' ||
+      parsed.user === null ||
+      !('id' in parsed.user) ||
+      String(parsed.user.id) !== String(userId)
+    ) {
+      return null;
+    }
+
+    return parsed as ProfileResponseData;
+  } catch {
+    return null;
+  }
+}
+
 export const ProfilePage: React.FC = () => {
-  const { t, setLanguage, notify } = useApp();
-  const { refreshUser } = useAuth();
+  const { t, setLanguage, notify, isOnline } = useApp();
+  const { user, refreshUser } = useAuth();
 
   const [data, setData] = useState<ProfileResponseData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -17,6 +45,7 @@ export const ProfilePage: React.FC = () => {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [profileNotice, setProfileNotice] = useState<string | null>(null);
 
   // Form fields
   const [fullName, setFullName] = useState('');
@@ -45,20 +74,67 @@ export const ProfilePage: React.FC = () => {
     setLoading(true);
     setError(null);
     setSaveSuccess(null);
+
+    const showSavedProfile = (message: string): boolean => {
+      const fallback =
+        readCachedProfile(user?.id) ??
+        (user ? { user, farmer_profile: null } : null);
+
+      if (!fallback) return false;
+
+      setData(fallback);
+      syncFormFromResponse(fallback);
+      setProfileNotice(message);
+      return true;
+    };
+
+    if (!isOnline) {
+      if (
+        !showSavedProfile(
+          'No internet connection. Showing saved profile details; editing and saving require internet access.',
+        )
+      ) {
+        setError('No internet connection, and no saved profile is available on this device yet.');
+      }
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await profileService.getProfile();
       setData(res);
       syncFormFromResponse(res);
+      setProfileNotice(null);
+      if (user?.id !== undefined) {
+        try {
+          localStorage.setItem(
+            `${PROFILE_CACHE_PREFIX}${user.id}`,
+            JSON.stringify(res),
+          );
+        } catch {
+          // Keep the online profile usable if browser storage is unavailable.
+        }
+      }
     } catch (err: any) {
-      setError(err?.message || 'Unable to load farmer profile from server.');
+      if (
+        !showSavedProfile(
+          'The profile server is unavailable. Showing saved details; reconnect to edit or save changes.',
+        )
+      ) {
+        setError(err?.message || 'Unable to load farmer profile from server.');
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isOnline, user]);
 
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
+
+  useEffect(() => {
+    if (!isOnline) setEditing(false);
+  }, [isOnline]);
 
   const handleUseGps = () => {
     if (!navigator.geolocation) {
@@ -78,6 +154,12 @@ export const ProfilePage: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaveSuccess(null);
+
+    if (!isOnline) {
+      notify('An internet connection is required to save profile changes.', 'warning');
+      setEditing(false);
+      return;
+    }
 
     const parsedLat = latitude.trim() ? Number(latitude) : null;
     const parsedLng = longitude.trim() ? Number(longitude) : null;
@@ -132,7 +214,7 @@ export const ProfilePage: React.FC = () => {
             <RefreshCw className="w-3.5 h-3.5" />
             <span>{t('refresh')}</span>
           </button>
-          {data && !editing && (
+          {data && !editing && isOnline && (
             <button
               type="button"
               onClick={() => setEditing(true)}
@@ -155,6 +237,13 @@ export const ProfilePage: React.FC = () => {
         />
       ) : (
         <div className="max-w-3xl space-y-6">
+          {profileNotice && (
+            <div className="rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/20 p-4 flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200" role="status">
+              <WifiOff className="w-4 h-4 shrink-0" />
+              <span>{profileNotice}</span>
+            </div>
+          )}
+
           {saveSuccess && (
             <div className="rounded-lg border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/70 dark:bg-emerald-950/30 p-4 flex items-center gap-2.5 text-xs text-emerald-900 dark:text-emerald-200">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
@@ -180,7 +269,7 @@ export const ProfilePage: React.FC = () => {
                 <input
                   id="prof-name"
                   type="text"
-                  disabled={!editing || saving}
+                  disabled={!editing || saving || !isOnline}
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   className="w-full px-3.5 py-2 text-sm rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 disabled:bg-stone-100 dark:disabled:bg-stone-900/50"
@@ -205,7 +294,7 @@ export const ProfilePage: React.FC = () => {
                 </label>
                 <select
                   id="prof-lang"
-                  disabled={!editing || saving}
+                  disabled={!editing || saving || !isOnline}
                   value={preferredLanguage}
                   onChange={(e) => setPreferredLanguage(e.target.value as 'en' | 'am')}
                   className="w-full px-3.5 py-2 text-sm rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 disabled:bg-stone-100 dark:disabled:bg-stone-900/50"
@@ -222,7 +311,7 @@ export const ProfilePage: React.FC = () => {
                 <input
                   id="prof-region"
                   type="text"
-                  disabled={!editing || saving}
+                  disabled={!editing || saving || !isOnline}
                   value={region}
                   onChange={(e) => setRegion(e.target.value)}
                   className="w-full px-3.5 py-2 text-sm rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 disabled:bg-stone-100 dark:disabled:bg-stone-900/50"
@@ -236,7 +325,7 @@ export const ProfilePage: React.FC = () => {
                 <input
                   id="prof-woreda"
                   type="text"
-                  disabled={!editing || saving}
+                  disabled={!editing || saving || !isOnline}
                   value={woreda}
                   onChange={(e) => setWoreda(e.target.value)}
                   className="w-full px-3.5 py-2 text-sm rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 disabled:bg-stone-100 dark:disabled:bg-stone-900/50"
@@ -250,7 +339,7 @@ export const ProfilePage: React.FC = () => {
                 <input
                   id="prof-kebele"
                   type="text"
-                  disabled={!editing || saving}
+                  disabled={!editing || saving || !isOnline}
                   value={kebele}
                   onChange={(e) => setKebele(e.target.value)}
                   className="w-full px-3.5 py-2 text-sm rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 disabled:bg-stone-100 dark:disabled:bg-stone-900/50"
@@ -263,7 +352,7 @@ export const ProfilePage: React.FC = () => {
                 <span className="text-xs font-semibold text-stone-700 dark:text-stone-300">
                   Geographical Coordinates (Used for <code className="font-mono">/api/weather/farmer</code>)
                 </span>
-                {editing && (
+                {editing && isOnline && (
                   <button
                     type="button"
                     onClick={handleUseGps}
@@ -283,7 +372,7 @@ export const ProfilePage: React.FC = () => {
                   <input
                     id="prof-lat"
                     type="text"
-                    disabled={!editing || saving}
+                    disabled={!editing || saving || !isOnline}
                     value={latitude}
                     onChange={(e) => setLatitude(e.target.value)}
                     placeholder="e.g. 9.1245"
@@ -297,7 +386,7 @@ export const ProfilePage: React.FC = () => {
                   <input
                     id="prof-lng"
                     type="text"
-                    disabled={!editing || saving}
+                    disabled={!editing || saving || !isOnline}
                     value={longitude}
                     onChange={(e) => setLongitude(e.target.value)}
                     placeholder="e.g. 37.0561"
@@ -311,7 +400,7 @@ export const ProfilePage: React.FC = () => {
               <label className="flex items-start gap-2.5 text-xs text-stone-700 dark:text-stone-300 cursor-pointer">
                 <input
                   type="checkbox"
-                  disabled={!editing || saving}
+                  disabled={!editing || saving || !isOnline}
                   checked={smsOptIn}
                   onChange={(e) => setSmsOptIn(e.target.checked)}
                   className="mt-0.5 rounded border-stone-300 text-emerald-800"
@@ -324,7 +413,7 @@ export const ProfilePage: React.FC = () => {
               <div className="pt-4 border-t border-stone-200 dark:border-stone-800 flex items-center justify-end gap-3">
                 <button
                   type="button"
-                  disabled={saving}
+                  disabled={saving || !isOnline}
                   onClick={() => {
                     syncFormFromResponse(data);
                     setEditing(false);
@@ -335,7 +424,7 @@ export const ProfilePage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={saving || !isOnline}
                   className="px-5 py-2 text-xs font-semibold text-white bg-emerald-900 hover:bg-emerald-800 rounded-lg disabled:opacity-50 cursor-pointer"
                 >
                   {saving ? 'Saving to Server...' : t('saveChanges')}
