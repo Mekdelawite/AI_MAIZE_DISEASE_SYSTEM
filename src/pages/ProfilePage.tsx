@@ -31,8 +31,10 @@ export const ProfilePage: React.FC = () => {
   const syncFormFromResponse = (res: ProfileResponseData) => {
     const u = res.user;
     const fp = res.farmer_profile;
+    const savedLanguage = (fp?.preferred_language || u?.preferred_language || 'en') as 'en' | 'am';
     setFullName(fp?.full_name || u?.full_name || u?.name || '');
-    setPreferredLanguage((fp?.preferred_language || u?.preferred_language || 'en') as 'en' | 'am');
+    setPreferredLanguage(savedLanguage);
+    setLanguage(savedLanguage);
     setRegion(fp?.region || u?.region || '');
     setWoreda(fp?.woreda || u?.woreda || '');
     setKebele(fp?.kebele || u?.kebele || '');
@@ -106,8 +108,8 @@ export const ProfilePage: React.FC = () => {
 
       setData(updated);
       syncFormFromResponse(updated);
-      setLanguage(preferredLanguage);
-      await refreshUser();
+      const refreshedUser = await refreshUser();
+      setLanguage(refreshedUser?.preferred_language || updated.user?.preferred_language || preferredLanguage);
       setEditing(false);
       setSaveSuccess('Profile updated and confirmed by the server.');
       notify('Farmer profile updated on server.', 'success');
@@ -207,7 +209,11 @@ export const ProfilePage: React.FC = () => {
                   id="prof-lang"
                   disabled={!editing || saving}
                   value={preferredLanguage}
-                  onChange={(e) => setPreferredLanguage(e.target.value as 'en' | 'am')}
+                  onChange={(e) => {
+                    const nextLanguage = e.target.value as 'en' | 'am';
+                    setPreferredLanguage(nextLanguage);
+                    setLanguage(nextLanguage);
+                  }}
                   className="w-full px-3.5 py-2 text-sm rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 disabled:bg-stone-100 dark:disabled:bg-stone-900/50"
                 >
                   <option value="en">English (en)</option>

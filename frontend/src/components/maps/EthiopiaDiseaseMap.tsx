@@ -24,6 +24,9 @@ interface Props {
   cases: GeoDiagnosis[];
   selectedRegion: string;
   onSelectRegion: (region: string) => void;
+  mapHeight?: number;
+  compact?: boolean;
+  focusEthiopia?: boolean;
 }
 
 const REGION_NAMES = [
@@ -70,7 +73,7 @@ export const resolveEthiopianRegionName = (name?: string) => {
   );
 };
 
-export const EthiopiaDiseaseMap: React.FC<Props> = ({ cases }) => {
+export const EthiopiaDiseaseMap: React.FC<Props> = ({ cases, mapHeight = 480, compact = false, focusEthiopia = false }) => {
   const pointGroups = useMemo(() => {
     const groups = new Map<string, GeoDiagnosis[]>();
 
@@ -130,8 +133,10 @@ export const EthiopiaDiseaseMap: React.FC<Props> = ({ cases }) => {
           zoom={5}
           minZoom={4}
           maxZoom={18}
+          maxBounds={focusEthiopia ? [[3, 33], [15, 48]] : undefined}
+          maxBoundsViscosity={focusEthiopia ? 1 : 0}
           scrollWheelZoom={true}
-          style={{ height: '480px', width: '100%' }}
+          style={{ height: `${mapHeight}px`, width: '100%' }}
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -206,7 +211,7 @@ export const EthiopiaDiseaseMap: React.FC<Props> = ({ cases }) => {
         </MapContainer>
       </div>
 
-      <div className="flex flex-wrap gap-4 text-xs text-stone-600 dark:text-stone-300">
+      {!compact && <div className="flex flex-wrap gap-4 text-xs text-stone-600 dark:text-stone-300">
         <span className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-full bg-green-600" />
           Low: 1 diagnosis
@@ -221,13 +226,13 @@ export const EthiopiaDiseaseMap: React.FC<Props> = ({ cases }) => {
           <span className="h-3 w-3 rounded-full bg-red-600" />
           High: 5+ diagnoses
         </span>
-      </div>
+      </div>}
 
-      <p className="text-[11px] text-stone-500">
+      {!compact && <p className="text-[11px] text-stone-500">
         OpenStreetMap — Ethiopia. Hotspots group diagnoses sharing
         the same GPS coordinates. Only records with valid GPS
         coordinates inside the configured geographic bounds appear.
-      </p>
+      </p>}
     </div>
   );
 };

@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, History, Layers, ScanLine, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, History, Layers, ScanLine, ShieldAlert, Volume2, Square } from 'lucide-react';
 import { EmptyState } from '../components/common/FeedbackStates';
+import { TreatmentGuidance } from '../components/diagnosis/TreatmentGuidance';
 import { AppShell } from '../components/layout/AppShell';
 import { useApp } from '../context/AppContext';
 import { CompleteDiagnosisResponse } from '../types/api';
+import { AdvisoryRecord } from '../types/api';
+import { diagnosisService } from '../services/diagnosisService';
 import { formatConfidence, formatDateTime, normalizeConfidencePercent, resolveMediaUrl } from '../utils/media';
 
 function renderListOrText(value?: string | string[] | null): React.ReactNode {
@@ -23,7 +26,7 @@ function renderListOrText(value?: string | string[] | null): React.ReactNode {
 }
 
 export const DiagnosisResultPage: React.FC = () => {
-  const { t } = useApp();
+  const { t, language: appLanguage } = useApp();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -34,6 +37,90 @@ export const DiagnosisResultPage: React.FC = () => {
 
   const result = state.result;
   const [heatmapImgError, setHeatmapImgError] = useState(false);
+  const [speakingLanguage, setSpeakingLanguage] = useState<'en' | 'am' | null>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'am'>(appLanguage);
+  const [localizedAdvisories, setLocalizedAdvisories] = useState<Partial<Record<'en' | 'am', AdvisoryRecord>>>(() => result?.advisory?.language ? { [result.advisory.language]: result.advisory } : {});
+  const [languageLoading, setLanguageLoading] = useState(false);
+  const [languageError, setLanguageError] = useState('');
+
+  useEffect(() => {
+    setSelectedLanguage(appLanguage);
+  }, [appLanguage]);
+
+  useEffect(() => {
+    if (!result?.diagnosis?.prediction?.class_name) return;
+    let cancelled = false;
+    const currentLanguage = result.advisory?.language || 'en';
+    const otherLanguage: 'en' | 'am' = currentLanguage === 'en' ? 'am' : 'en';
+    setLanguageLoading(true);
+    diagnosisService.getAdvisoryForLanguage({
+      prediction: {
+        class_name: result.diagnosis.prediction.class_name,
+        confidence: normalizeConfidencePercent(result.diagnosis.prediction.confidence),
+      },
+    }, otherLanguage).then((localized) => {
+      if (cancelled) return;
+      setLocalizedAdvisories((previous) => ({ ...previous, [otherLanguage]: localized }));
+      setLanguageError('');
+    }).catch((error: any) => {
+      if (!cancelled) setLanguageError(error?.message || 'Could not load the other language advisory.');
+    }).finally(() => {
+      if (!cancelled) setLanguageLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [result]);
+
+  useEffect(() => {
+    const className = result?.diagnosis?.prediction?.class_name;
+    if (!className || localizedAdvisories[selectedLanguage] || result.advisory?.language === selectedLanguage) return;
+    let cancelled = false;
+    setLanguageLoading(true);
+    diagnosisService.getAdvisoryForLanguage({
+      prediction: {
+        class_name: className,
+        confidence: normalizeConfidencePercent(result.diagnosis.prediction.confidence),
+      },
+    }, selectedLanguage).then((localized) => {
+      if (!cancelled) {
+        setLocalizedAdvisories((previous) => ({ ...previous, [selectedLanguage]: localized }));
+        setLanguageError('');
+      }
+    }).catch((error: any) => {
+      if (!cancelled) setLanguageError(error?.message || 'Could not load the selected language advisory.');
+    }).finally(() => {
+      if (!cancelled) setLanguageLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [result, selectedLanguage]);
+
+  const speak = (text: string, language: 'en' | 'am') => {
+    if (!('speechSynthesis' in window) || !text.trim()) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = language === 'am' ? 'am-ET' : 'en-US';
+    utterance.onstart = () => setSpeakingLanguage(language);
+    utterance.onend = utterance.onerror = () => setSpeakingLanguage(null);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const speakAdvisory = (language: 'en' | 'am') => {
+    const target = localizedAdvisories[language] || (result?.advisory?.language === language ? result.advisory : null);
+    if (!target) return;
+    const management = target.management || target.treatment || target.treatments || target.recommendations;
+    const prevention = target.prevention || target.preventions;
+    const pesticideRecommendation = target.pesticide_recommendation || [];
+    const pesticideSafety = target.pesticide_safety || [];
+    const text = [
+      `Diagnosis: ${result?.diagnosis?.prediction?.class_name || ''}.`,
+      target.description || target.advisory_text || '',
+      ...(Array.isArray(management) ? management : management ? [management] : []),
+      ...(Array.isArray(prevention) ? prevention : prevention ? [prevention] : []),
+      ...pesticideRecommendation,
+      ...pesticideSafety,
+    ].join(' ');
+    setSelectedLanguage(language);
+    speak(text, language);
+  };
 
   if (!result || !result.diagnosis) {
     return (
@@ -48,7 +135,9 @@ export const DiagnosisResultPage: React.FC = () => {
     );
   }
 
-  const { diagnosis, advisory, database } = result;
+  const { diagnosis, database } = result;
+  const advisory = localizedAdvisories[selectedLanguage]
+    || (result.advisory?.language === selectedLanguage || !result.advisory?.language ? result.advisory : null);
   const prediction = diagnosis.prediction || { class_name: 'Unknown', confidence: 0 };
   const confidencePercent = normalizeConfidencePercent(prediction.confidence);
   const savedDiagnosisId = database?.diagnosis_id ?? diagnosis.database_id;
@@ -69,6 +158,8 @@ export const DiagnosisResultPage: React.FC = () => {
 
   const treatmentContent = advisory?.management || advisory?.treatment || advisory?.treatments || advisory?.recommendations;
   const preventionContent = advisory?.prevention || advisory?.preventions;
+  const pesticideRecommendation = advisory?.pesticide_recommendation;
+  const pesticideSafety = advisory?.pesticide_safety;
   const outbreakStatus = diagnosis.outbreak_status || diagnosis.outbreak;
 
   return (
@@ -95,6 +186,18 @@ export const DiagnosisResultPage: React.FC = () => {
       }
     >
       <div className="space-y-8">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-stone-200 bg-white p-4 dark:border-stone-800 dark:bg-[#121A16]" aria-label="Listen to diagnosis advisory">
+          <span className="mr-1 text-sm font-medium text-stone-700 dark:text-stone-300">Listen to this diagnosis:</span>
+          <button type="button" disabled={!localizedAdvisories.en && result.advisory?.language !== 'en'} onClick={() => speakAdvisory('en')} className="inline-flex items-center gap-2 rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-800 hover:bg-stone-100 disabled:opacity-50 dark:border-stone-700 dark:text-stone-100 dark:hover:bg-stone-800">
+            {speakingLanguage === 'en' ? <Square className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} Listen in English
+          </button>
+          <button type="button" disabled={!localizedAdvisories.am && result.advisory?.language !== 'am'} onClick={() => speakAdvisory('am')} className="inline-flex items-center gap-2 rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-800 hover:bg-stone-100 disabled:opacity-50 dark:border-stone-700 dark:text-stone-100 dark:hover:bg-stone-800">
+            {speakingLanguage === 'am' ? <Square className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} በአማርኛ ያዳምጡ
+          </button>
+          {speakingLanguage && <button type="button" onClick={() => { window.speechSynthesis.cancel(); setSpeakingLanguage(null); }} className="text-sm text-stone-600 underline dark:text-stone-300">Stop</button>}
+          {languageLoading && <span className="text-sm text-stone-500">Loading Amharic and English advisory…</span>}
+          {languageError && <span role="status" className="text-sm text-amber-700 dark:text-amber-300">{languageError}</span>}
+        </div>
         {/* Top Summary Card */}
         <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-6 sm:p-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -261,11 +364,13 @@ export const DiagnosisResultPage: React.FC = () => {
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 dark:border-stone-800 pb-4">
             <div>
               <h3 className="text-lg font-bold text-stone-900 dark:text-stone-100 font-display">
-                {advisory?.heading || advisory?.title || `Agronomic Advisory: ${advisory?.disease || prediction.class_name}`}
+                {selectedLanguage === 'am'
+                  ? `የግብርና ምክር፦ ${advisory?.disease || prediction.class_name}`
+                  : advisory?.heading || advisory?.title || `Agronomic Advisory: ${advisory?.disease || prediction.class_name}`}
               </h3>
               {advisory?.disease && (
                 <p className="mt-1 text-sm text-stone-700 dark:text-stone-300">
-                  Disease: {advisory.disease}
+                  {selectedLanguage === 'am' ? 'በሽታ፦ ' : 'Disease: '}{advisory.disease}
                 </p>
               )}
               {advisory?.scientific_name && (
@@ -276,46 +381,48 @@ export const DiagnosisResultPage: React.FC = () => {
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 {advisory?.severity && (
                   <span className="rounded-full bg-amber-100 px-2.5 py-1 font-medium text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                    Severity: {advisory.severity}
+                    {selectedLanguage === 'am' ? 'የበሽታው ክብደት፦ ' : 'Severity: '}{advisory.severity}
                   </span>
                 )}
                 {advisory?.confidence != null && (
                   <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-medium text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
-                    Advisory confidence: {formatConfidence(advisory.confidence)}
+                    {selectedLanguage === 'am' ? 'የምክር እምነት፦ ' : 'Advisory confidence: '}{formatConfidence(advisory.confidence)}
                   </span>
                 )}
                 {advisory?.language && (
                   <span className="rounded-full bg-stone-100 px-2.5 py-1 text-stone-700 dark:bg-stone-800 dark:text-stone-300">
-                    Language: {advisory.language === 'am' ? 'Amharic' : 'English'}
+                    {selectedLanguage === 'am' ? 'ቋንቋ፦ አማርኛ' : `Language: ${advisory.language === 'am' ? 'Amharic' : 'English'}`}
                   </span>
                 )}
               </div>
               {advisory?.source && (
                 <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
-                  Advisory Source: {advisory.source}
+                    {selectedLanguage === 'am' ? 'የምክር ምንጭ፦ ' : 'Advisory Source: '}{advisory.source}
                 </p>
               )}
               {advisory?.created_at && (
                 <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
-                  Generated: {formatDateTime(advisory.created_at)}
+                    {selectedLanguage === 'am' ? 'የተዘጋጀበት ጊዜ፦ ' : 'Generated: '}{formatDateTime(advisory.created_at)}
                 </p>
               )}
             </div>
             {database?.advisory_id !== undefined && (
-              <span className="text-xs font-mono text-stone-500">Advisory ID: #{database.advisory_id}</span>
+              <span className="text-xs font-mono text-stone-500">{selectedLanguage === 'am' ? 'የምክር መለያ፦' : 'Advisory ID:'} #{database.advisory_id}</span>
             )}
           </div>
 
           {!advisory ? (
             <p className="text-sm text-stone-600 dark:text-stone-400">
-              No advisory payload was returned by the server for this classification.
+              {languageLoading
+                ? (selectedLanguage === 'am' ? 'የአማርኛ ምክር በመጫን ላይ…' : 'Loading the selected language advisory…')
+                : selectedLanguage === 'am' ? 'ለዚህ ምደባ ምክር አልተገኘም።' : 'No advisory payload was returned by the server for this classification.'}
             </p>
           ) : (
             <div className="space-y-6">
               {advisory.description && (
                 <div>
                   <h4 className="text-xs font-semibold text-stone-500 dark:text-stone-400 mb-2">
-                    Condition Overview
+                    {selectedLanguage === 'am' ? 'የሁኔታው አጠቃላይ እይታ' : 'Condition Overview'}
                   </h4>
                   <p className="text-sm text-stone-800 dark:text-stone-200 leading-relaxed whitespace-pre-line">
                     {advisory.description}
@@ -326,7 +433,7 @@ export const DiagnosisResultPage: React.FC = () => {
               {advisory.advisory_text && !advisory.description && (
                 <div>
                   <h4 className="mb-2 text-xs font-semibold text-stone-500 dark:text-stone-400">
-                    Advisory
+                    {selectedLanguage === 'am' ? 'ምክር' : 'Advisory'}
                   </h4>
                   <p className="whitespace-pre-line text-sm leading-relaxed text-stone-800 dark:text-stone-200">
                     {advisory.advisory_text}
@@ -336,47 +443,37 @@ export const DiagnosisResultPage: React.FC = () => {
 
               {renderListOrText(advisory.symptoms) && (
                 <div>
-                  <h4 className="mb-2 text-xs font-semibold text-stone-500 dark:text-stone-400">Symptoms</h4>
+                  <h4 className="mb-2 text-xs font-semibold text-stone-500 dark:text-stone-400">{selectedLanguage === 'am' ? 'ምልክቶች' : 'Symptoms'}</h4>
                   {renderListOrText(advisory.symptoms)}
                 </div>
               )}
 
               {renderListOrText(advisory.causes) && (
                 <div>
-                  <h4 className="mb-2 text-xs font-semibold text-stone-500 dark:text-stone-400">Causes</h4>
+                  <h4 className="mb-2 text-xs font-semibold text-stone-500 dark:text-stone-400">{selectedLanguage === 'am' ? 'መንስኤዎች' : 'Causes'}</h4>
                   {renderListOrText(advisory.causes)}
                 </div>
               )}
 
               {renderListOrText(advisory.favorable_conditions) && (
                 <div>
-                  <h4 className="mb-2 text-xs font-semibold text-stone-500 dark:text-stone-400">Favorable Conditions</h4>
+                  <h4 className="mb-2 text-xs font-semibold text-stone-500 dark:text-stone-400">{selectedLanguage === 'am' ? 'በሽታውን የሚያበረታቱ ሁኔታዎች' : 'Favorable Conditions'}</h4>
                   {renderListOrText(advisory.favorable_conditions)}
                 </div>
               )}
 
-              {treatmentContent && (
-                <div className="pt-4 border-t border-stone-200/70 dark:border-stone-800">
-                  <h4 className="text-xs font-semibold text-emerald-800 dark:text-emerald-400 mb-2">
-                    Treatment & Management Recommendations
-                  </h4>
-                  {renderListOrText(treatmentContent)}
-                </div>
-              )}
-
-              {preventionContent && (
-                <div className="pt-4 border-t border-stone-200/70 dark:border-stone-800">
-                  <h4 className="text-xs font-semibold text-amber-800 dark:text-amber-400 mb-2">
-                    Prevention Guidance
-                  </h4>
-                  {renderListOrText(preventionContent)}
-                </div>
-              )}
+              <TreatmentGuidance
+                language={selectedLanguage}
+                fieldPractices={treatmentContent}
+                prevention={preventionContent}
+                pesticideOptions={pesticideRecommendation}
+                safetyInstructions={pesticideSafety}
+              />
 
               {advisory.sources && advisory.sources.length > 0 && (
                 <div className="border-t border-stone-200/70 pt-4 dark:border-stone-800">
                   <h4 className="mb-2 text-xs font-semibold text-stone-600 dark:text-stone-300">
-                    Sources
+                    {selectedLanguage === 'am' ? 'ምንጮች' : 'Sources'}
                   </h4>
                   <ul className="space-y-2">
                     {advisory.sources.map((source, index) => (
@@ -390,10 +487,10 @@ export const DiagnosisResultPage: React.FC = () => {
                         )}
                         {(source.organization || source.year || source.source_type) && (
                           <span className="ml-1 text-xs text-stone-500 dark:text-stone-400">
-                            {[source.organization, source.year, source.source_type].filter(Boolean).join(' · ')}
+                            {[source.organization, source.year, ...(selectedLanguage === 'am' ? [] : [source.source_type])].filter(Boolean).join(' · ')}
                           </span>
                         )}
-                        {source.notes && <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">{source.notes}</p>}
+                        {source.notes && selectedLanguage !== 'am' && <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">{source.notes}</p>}
                       </li>
                     ))}
                   </ul>
@@ -403,7 +500,7 @@ export const DiagnosisResultPage: React.FC = () => {
               {advisory.validation && Object.keys(advisory.validation).length > 0 && (
                 <details className="border-t border-stone-200/70 pt-4 dark:border-stone-800">
                   <summary className="cursor-pointer text-xs font-semibold text-stone-600 dark:text-stone-300">
-                    Advisory validation details
+                    {selectedLanguage === 'am' ? 'የምክር ማረጋገጫ ዝርዝሮች' : 'Advisory validation details'}
                   </summary>
                   <dl className="mt-3 grid gap-2 sm:grid-cols-2">
                     {Object.entries(advisory.validation).map(([key, value]) => (

@@ -46,11 +46,13 @@ from backend.app.services.admin_service import (
 )
 
 from backend.app.services.auth_service import (
+    AuthServiceError,
     InvalidCredentialsError,
     UserAlreadyExistsError,
 )
 
 from backend.app.services.extension_agent_service import (
+    ExtensionAgentAlreadyExistsError,
     ExtensionAgentService,
 )
 
@@ -119,12 +121,19 @@ def create_extension_agent():
 
     try:
 
-        agent = (
-            ExtensionAgentService
-            .create_extension_agent(
-                payload
-            )
+        user = ExtensionAgentService.create_agent(
+            phone_number=payload.get("phone_number"),
+            full_name=payload.get("full_name"),
+            password=payload.get("password"),
+            region=payload.get("region"),
+            woreda=payload.get("woreda"),
+            specialization=payload.get("specialization"),
+            certification_number=payload.get("certification_number"),
+            preferred_language=payload.get("preferred_language", "en"),
         )
+
+        profile = ExtensionAgentService.get_agent_by_user_id(user.id)
+        agent = ExtensionAgentService.agent_to_dict(profile) if profile else None
 
         return success_response(
             agent,
@@ -139,7 +148,15 @@ def create_extension_agent():
             409,
         )
 
-    except ValueError as exc:
+    except ExtensionAgentAlreadyExistsError as exc:
+
+        return error_response(
+            "EXTENSION_AGENT_ALREADY_EXISTS",
+            str(exc),
+            409,
+        )
+
+    except (AuthServiceError, ValueError) as exc:
 
         return error_response(
             "VALIDATION_ERROR",

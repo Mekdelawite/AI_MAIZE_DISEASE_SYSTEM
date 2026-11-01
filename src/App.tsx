@@ -10,6 +10,7 @@ import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
+import { AdminDiagnosisActivityPage } from './pages/AdminDiagnosisActivityPage';
 import { AdminGeoDiseaseMapPage } from './pages/AdminGeoDiseaseMapPage';
 import { CropCalendarPage } from './pages/CropCalendarPage';
 import { DiagnosisDetailPage } from './pages/DiagnosisDetailPage';
@@ -200,6 +201,14 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRoles={['extension_agent', 'admin']}>
                   <ReportsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/diagnoses"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AdminDiagnosisActivityPage />
                 </ProtectedRoute>
               }
             />

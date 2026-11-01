@@ -10,6 +10,7 @@ import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
+import { AdminDiagnosisActivityPage } from './pages/AdminDiagnosisActivityPage';
 import { AdminGeoDiseaseMapPage } from './pages/AdminGeoDiseaseMapPage';
 import { AboutDevelopersPage } from './pages/AboutDevelopersPage';
 import { CropCalendarPage } from './pages/CropCalendarPage';
@@ -21,6 +22,7 @@ import { DiscussionPage } from './pages/DiscussionPage';
 import { ExtensionAgentManagementPage } from './pages/ExtensionAgentManagementPage';
 import { ExtensionCasesPage } from './pages/ExtensionCasesPage';
 import { ExtensionDashboardPage } from './pages/ExtensionDashboardPage';
+import { ExtensionFarmerDetailPage } from './pages/ExtensionFarmerDetailPage';
 import { ExtensionMapPage } from './pages/ExtensionMapPage';
 import { FarmerDashboardPage } from './pages/FarmerDashboardPage';
 import { FarmerManagementPage } from './pages/FarmerManagementPage';
@@ -123,7 +125,7 @@ export default function App() {
             <Route
               path="/farmer/dashboard"
               element={
-                <ProtectedRoute allowedRoles={['farmer', 'extension_agent', 'admin']}>
+                <ProtectedRoute allowedRoles={['farmer']}>
                   <FarmerDashboardPage />
                 </ProtectedRoute>
               }
@@ -211,6 +213,22 @@ export default function App() {
               }
             />
             <Route
+              path="/extension/farmers/:farmerId"
+              element={
+                <ProtectedRoute allowedRoles={['extension_agent', 'admin']}>
+                  <ExtensionFarmerDetailPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/extension/farmers/:farmerId/diagnoses/:diagnosisId"
+              element={
+                <ProtectedRoute allowedRoles={['extension_agent', 'admin']}>
+                  <ExtensionFarmerDetailPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/extension/map"
               element={
                 <ProtectedRoute allowedRoles={['extension_agent', 'admin']}>
@@ -281,6 +299,14 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRoles={['extension_agent', 'admin']}>
                   <ReportsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/diagnoses"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AdminDiagnosisActivityPage />
                 </ProtectedRoute>
               }
             />

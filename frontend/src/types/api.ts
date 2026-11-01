@@ -79,6 +79,8 @@ export interface AdvisoryRecord {
   causes?: string[];
   favorable_conditions?: string[];
   management?: string[];
+  pesticide_recommendation?: string[];
+  pesticide_safety?: string[];
   sources?: AdvisorySource[];
   validation?: Record<string, unknown>;
   disclaimer?: string;
@@ -131,6 +133,7 @@ export interface DiagnosisHistoryItem {
   id: number | string;
   diagnosis_id?: number | string;
   user_id?: number | string;
+  farmer_id?: number | string;
   farmer_name?: string;
   farmer_phone?: string;
   disease_class?: string;

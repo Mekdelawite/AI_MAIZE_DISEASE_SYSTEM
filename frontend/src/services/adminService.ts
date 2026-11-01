@@ -7,7 +7,6 @@ export interface CreateExtensionAgentPayload {
   password: string;
   region: string;
   woreda: string;
-  kebele?: string;
   preferred_language?: 'en' | 'am';
 }
 
@@ -83,8 +82,8 @@ export const adminService = {
     });
   },
 
-  async getRegionalStatistics(): Promise<any> {
-    return apiRequest('/api/admin/regional-statistics', { method: 'GET' });
+  async getRegionalStatistics(params?: { disease_class?: string; start_date?: string; end_date?: string }): Promise<any> {
+    return apiRequest('/api/admin/regional-statistics', { method: 'GET', params });
   },
 
   async getGeoDiseases(params?: { disease_class?: string; start_date?: string; end_date?: string }): Promise<any[]> {

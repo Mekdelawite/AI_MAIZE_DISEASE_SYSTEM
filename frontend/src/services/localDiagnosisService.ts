@@ -271,6 +271,7 @@ async function validateMaizeLeafImage(
     }
 
     const scores = Array.from(await scoreTensor.data());
+    console.log('[MAIZE VALIDITY MODEL SCORE]', scores[0]);
 
     if (
       scores.length !== 1 ||

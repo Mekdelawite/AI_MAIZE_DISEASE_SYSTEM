@@ -74,19 +74,19 @@ class ExtensionAgentService:
         """
 
         if not isinstance(region, str):
-            raise ExtensionAgentServiceError(
+            raise ValueError(
                 "Region must be a string."
             )
 
         region = region.strip()
 
         if not region:
-            raise ExtensionAgentServiceError(
+            raise ValueError(
                 "Region is required."
             )
 
         if len(region) > 50:
-            raise ExtensionAgentServiceError(
+            raise ValueError(
                 "Region must not exceed 50 characters."
             )
 
@@ -104,7 +104,7 @@ class ExtensionAgentService:
             return None
 
         if not isinstance(woreda, str):
-            raise ExtensionAgentServiceError(
+            raise ValueError(
                 "Woreda must be a string."
             )
 
@@ -114,7 +114,7 @@ class ExtensionAgentService:
             return None
 
         if len(woreda) > 50:
-            raise ExtensionAgentServiceError(
+            raise ValueError(
                 "Woreda must not exceed 50 characters."
             )
 
@@ -132,7 +132,7 @@ class ExtensionAgentService:
             return None
 
         if not isinstance(specialization, str):
-            raise ExtensionAgentServiceError(
+            raise ValueError(
                 "Specialization must be a string."
             )
 
@@ -142,7 +142,7 @@ class ExtensionAgentService:
             return None
 
         if len(specialization) > 50:
-            raise ExtensionAgentServiceError(
+            raise ValueError(
                 "Specialization must not exceed 50 characters."
             )
 
@@ -160,7 +160,7 @@ class ExtensionAgentService:
             return None
 
         if not isinstance(certification_number, str):
-            raise ExtensionAgentServiceError(
+            raise ValueError(
                 "Certification number must be a string."
             )
 
@@ -172,7 +172,7 @@ class ExtensionAgentService:
             return None
 
         if len(certification_number) > 50:
-            raise ExtensionAgentServiceError(
+            raise ValueError(
                 "Certification number must not exceed "
                 "50 characters."
             )

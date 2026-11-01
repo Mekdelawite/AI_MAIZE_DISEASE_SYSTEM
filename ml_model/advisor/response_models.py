@@ -55,6 +55,14 @@ class AdvisoryResponse:
         default_factory=list
     )
 
+    pesticide_recommendation: list[str] = field(
+        default_factory=list
+    )
+
+    pesticide_safety: list[str] = field(
+        default_factory=list
+    )
+
     sources: list[dict[str, Any]] = field(
         default_factory=list
     )
@@ -103,6 +111,14 @@ class AdvisoryResponse:
 
             "management": list(
                 self.management
+            ),
+
+            "pesticide_recommendation": list(
+                self.pesticide_recommendation
+            ),
+
+            "pesticide_safety": list(
+                self.pesticide_safety
             ),
 
             "sources": list(

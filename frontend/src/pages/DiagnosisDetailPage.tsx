@@ -1,17 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Layers, Trash2 } from 'lucide-react';
+import { ArrowLeft, Layers, Trash2, Volume2, Square } from 'lucide-react';
 import {
   ConfirmDialog,
   ErrorState,
   LoadingSkeleton,
 } from '../components/common/FeedbackStates';
 import { AppShell } from '../components/layout/AppShell';
+import { TreatmentGuidance } from '../components/diagnosis/TreatmentGuidance';
 import { useApp } from '../context/AppContext';
 import { diagnosisService } from '../services/diagnosisService';
 import { apiDownloadBlob } from '../services/api';
-import { DiagnosisHistoryItem } from '../types/api';
-import { formatConfidence, formatDateTime, resolveMediaUrl } from '../utils/media';
+import { AdvisoryRecord, DiagnosisHistoryItem } from '../types/api';
+import { formatConfidence, formatDateTime, normalizeConfidencePercent, resolveMediaUrl } from '../utils/media';
 
 function renderListOrText(value?: string | string[] | null): React.ReactNode {
   if (!value) return null;
@@ -28,10 +29,11 @@ function renderListOrText(value?: string | string[] | null): React.ReactNode {
 
 export const DiagnosisDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { t, notify } = useApp();
+  const { t, notify, language } = useApp();
   const navigate = useNavigate();
 
-  const [item, setItem] = useState<DiagnosisHistoryItem | null>(null);
+  const [storedItem, setItem] = useState<DiagnosisHistoryItem | null>(null);
+  const [localizedAdvisory, setLocalizedAdvisory] = useState<AdvisoryRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -39,6 +41,8 @@ export const DiagnosisDetailPage: React.FC = () => {
   const [heatmapError, setHeatmapError] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [leafImageUrl, setLeafImageUrl] = useState<string | null>(null);
+  const [speakingLanguage, setSpeakingLanguage] = useState<'en' | 'am' | null>(null);
+  const [loadingLanguage, setLoadingLanguage] = useState<'en' | 'am' | null>(null);
 
   const loadDetail = useCallback(async () => {
     if (!id) return;
@@ -46,6 +50,19 @@ export const DiagnosisDetailPage: React.FC = () => {
     setError(null);
     try {
       const data = await diagnosisService.getHistoryDetail(id);
+      if (!data.advisory?.pesticide_recommendation?.length) {
+        const disease = data.disease_class || data.class_name;
+        if (disease) {
+          try {
+            data.advisory = await diagnosisService.getAdvisoryForLanguage(
+              { prediction: { class_name: disease, confidence: normalizeConfidencePercent(data.confidence) } },
+              data.advisory?.language === 'am' || data.language === 'am' ? 'am' : 'en'
+            );
+          } catch {
+            // Keep the saved history detail available if refreshed guidance cannot load.
+          }
+        }
+      }
       setItem(data);
     } catch (err: any) {
       setError(err?.message || 'Unable to load diagnosis detail from server.');
@@ -57,6 +74,35 @@ export const DiagnosisDetailPage: React.FC = () => {
   useEffect(() => {
     loadDetail();
   }, [loadDetail]);
+
+  useEffect(() => {
+    if (!storedItem) {
+      setLocalizedAdvisory(null);
+      return;
+    }
+    const savedAdvisory = storedItem.advisory;
+    if (savedAdvisory?.language === language) {
+      setLocalizedAdvisory(savedAdvisory);
+      return;
+    }
+    const disease = storedItem.disease_class || storedItem.class_name;
+    if (!disease) return;
+    let cancelled = false;
+    setLocalizedAdvisory(null);
+    diagnosisService.getAdvisoryForLanguage(
+      { prediction: { class_name: disease, confidence: normalizeConfidencePercent(storedItem.confidence) } },
+      language
+    ).then((advisory) => {
+      if (!cancelled) setLocalizedAdvisory(advisory);
+    }).catch(() => {
+      if (!cancelled) setLocalizedAdvisory(null);
+    });
+    return () => { cancelled = true; };
+  }, [storedItem, language]);
+
+  const item = storedItem
+    ? { ...storedItem, advisory: localizedAdvisory || (storedItem.advisory?.language === language ? storedItem.advisory : null) }
+    : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +130,48 @@ export const DiagnosisDetailPage: React.FC = () => {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [item?.image_url]);
+
+  const speakAdvisory = async (language: 'en' | 'am') => {
+    if (!item) return;
+    if (speakingLanguage === language) {
+      window.speechSynthesis.cancel();
+      setSpeakingLanguage(null);
+      return;
+    }
+
+    setLoadingLanguage(language);
+    try {
+      const disease = item.disease_class || item.class_name || 'Unknown';
+      let advisory: AdvisoryRecord | null = item.advisory?.language === language ? item.advisory : null;
+      if (!advisory) {
+        advisory = await diagnosisService.getAdvisoryForLanguage({
+          prediction: { class_name: disease, confidence: normalizeConfidencePercent(item.confidence) },
+        }, language);
+      }
+      const management = advisory.management || advisory.treatment || advisory.treatments || advisory.recommendations;
+      const prevention = advisory.prevention || advisory.preventions;
+      const pesticideRecommendation = advisory.pesticide_recommendation || [];
+      const pesticideSafety = advisory.pesticide_safety || [];
+      const speechText = [
+        language === 'am' ? `የበቆሎ ቅጠል ምርመራ። የተገኘው ሁኔታ፦ ${disease}።` : `Maize leaf diagnosis. Detected condition: ${disease}.`,
+        advisory.description || advisory.advisory_text || '',
+        ...(Array.isArray(management) ? management : management ? [management] : []),
+        ...(Array.isArray(prevention) ? prevention : prevention ? [prevention] : []),
+        ...pesticideRecommendation,
+        ...pesticideSafety,
+      ].join(' ');
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(speechText);
+      utterance.lang = language === 'am' ? 'am-ET' : 'en-US';
+      utterance.onstart = () => setSpeakingLanguage(language);
+      utterance.onend = utterance.onerror = () => setSpeakingLanguage(null);
+      window.speechSynthesis.speak(utterance);
+    } catch (err: any) {
+      notify(err?.message || `Could not load the ${language === 'am' ? 'Amharic' : 'English'} advisory.`, 'error');
+    } finally {
+      setLoadingLanguage(null);
+    }
+  };
 
   const handleDelete = async () => {
     if (!id) return;
@@ -137,6 +225,16 @@ export const DiagnosisDetailPage: React.FC = () => {
         />
       ) : (
         <div className="space-y-8">
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-stone-200 bg-white p-4 dark:border-stone-800 dark:bg-[#121A16]" aria-label="Listen to this diagnosis">
+            <span className="mr-1 text-sm font-medium text-stone-700 dark:text-stone-300">Listen to this diagnosis:</span>
+            <button type="button" onClick={() => void speakAdvisory('en')} disabled={loadingLanguage !== null} className="inline-flex items-center gap-2 rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-800 hover:bg-stone-100 disabled:opacity-50 dark:border-stone-700 dark:text-stone-100 dark:hover:bg-stone-800">
+              {speakingLanguage === 'en' ? <Square className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} Listen in English
+            </button>
+            <button type="button" onClick={() => void speakAdvisory('am')} disabled={loadingLanguage !== null} className="inline-flex items-center gap-2 rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-800 hover:bg-stone-100 disabled:opacity-50 dark:border-stone-700 dark:text-stone-100 dark:hover:bg-stone-800">
+              {speakingLanguage === 'am' ? <Square className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} በአማርኛ ያዳምጡ
+            </button>
+            {loadingLanguage && <span className="text-sm text-stone-500">Loading {loadingLanguage === 'am' ? 'Amharic' : 'English'} advisory…</span>}
+          </div>
           <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-6 sm:p-8">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
@@ -208,15 +306,17 @@ export const DiagnosisDetailPage: React.FC = () => {
           {item.advisory && (
             <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-6 sm:p-8 space-y-4">
               <h3 className="text-lg font-bold text-stone-900 dark:text-stone-100 font-display">
-                {item.advisory.heading || item.advisory.title || `Agronomic Advisory: ${item.advisory.disease || item.disease_class || item.class_name || 'Diagnosis'}`}
+                {language === 'am'
+                  ? `የግብርና ምክር፦ ${item.advisory.disease || item.disease_class || item.class_name || 'ምርመራ'}`
+                  : item.advisory.heading || item.advisory.title || `Agronomic Advisory: ${item.advisory.disease || item.disease_class || item.class_name || 'Diagnosis'}`}
               </h3>
               {item.advisory.scientific_name && (
                 <p className="text-sm italic text-stone-600 dark:text-stone-400">{item.advisory.scientific_name}</p>
               )}
               <div className="flex flex-wrap gap-2 text-xs">
-                {item.advisory.severity && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">Severity: {item.advisory.severity}</span>}
-                {item.advisory.confidence != null && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">Advisory confidence: {formatConfidence(item.advisory.confidence)}</span>}
-                {item.advisory.language && <span className="rounded-full bg-stone-100 px-2.5 py-1 text-stone-700 dark:bg-stone-800 dark:text-stone-300">Language: {item.advisory.language === 'am' ? 'Amharic' : 'English'}</span>}
+                {item.advisory.severity && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">{language === 'am' ? 'የበሽታው ክብደት፦' : 'Severity:'} {item.advisory.severity}</span>}
+                {item.advisory.confidence != null && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">{language === 'am' ? 'የምክር እምነት፦' : 'Advisory confidence:'} {formatConfidence(item.advisory.confidence)}</span>}
+                {item.advisory.language && <span className="rounded-full bg-stone-100 px-2.5 py-1 text-stone-700 dark:bg-stone-800 dark:text-stone-300">{language === 'am' ? 'ቋንቋ፦ አማርኛ' : `Language: ${item.advisory.language === 'am' ? 'Amharic' : 'English'}`}</span>}
               </div>
               {(item.advisory.description || item.advisory.advisory_text) && (
                 <p className="text-sm text-stone-700 dark:text-stone-300 leading-relaxed whitespace-pre-line">
@@ -225,43 +325,38 @@ export const DiagnosisDetailPage: React.FC = () => {
               )}
               {renderListOrText(item.advisory.symptoms) && (
                 <div className="border-t border-stone-200 pt-3 dark:border-stone-800">
-                  <h4 className="mb-1 text-xs font-semibold text-stone-600 dark:text-stone-300">Symptoms</h4>
+                  <h4 className="mb-1 text-xs font-semibold text-stone-600 dark:text-stone-300">{language === 'am' ? 'ምልክቶች' : 'Symptoms'}</h4>
                   {renderListOrText(item.advisory.symptoms)}
                 </div>
               )}
               {renderListOrText(item.advisory.causes) && (
                 <div className="border-t border-stone-200 pt-3 dark:border-stone-800">
-                  <h4 className="mb-1 text-xs font-semibold text-stone-600 dark:text-stone-300">Causes</h4>
+                  <h4 className="mb-1 text-xs font-semibold text-stone-600 dark:text-stone-300">{language === 'am' ? 'መንስኤዎች' : 'Causes'}</h4>
                   {renderListOrText(item.advisory.causes)}
                 </div>
               )}
               {renderListOrText(item.advisory.favorable_conditions) && (
                 <div className="border-t border-stone-200 pt-3 dark:border-stone-800">
-                  <h4 className="mb-1 text-xs font-semibold text-stone-600 dark:text-stone-300">Favorable Conditions</h4>
+                  <h4 className="mb-1 text-xs font-semibold text-stone-600 dark:text-stone-300">{language === 'am' ? 'በሽታውን የሚያበረታቱ ሁኔታዎች' : 'Favorable Conditions'}</h4>
                   {renderListOrText(item.advisory.favorable_conditions)}
                 </div>
               )}
-              {renderListOrText(item.advisory.management || item.advisory.treatment || item.advisory.treatments || item.advisory.recommendations) && (
-                <div className="pt-3 border-t border-stone-200 dark:border-stone-800">
-                  <h4 className="mb-1 text-xs font-semibold text-emerald-800 dark:text-emerald-400">Management</h4>
-                  {renderListOrText(item.advisory.management || item.advisory.treatment || item.advisory.treatments || item.advisory.recommendations)}
-                </div>
-              )}
-              {renderListOrText(item.advisory.prevention || item.advisory.preventions) && (
-                <div className="pt-3 border-t border-stone-200 dark:border-stone-800">
-                  <h4 className="mb-1 text-xs font-semibold text-amber-800 dark:text-amber-400">Prevention</h4>
-                  {renderListOrText(item.advisory.prevention || item.advisory.preventions)}
-                </div>
-              )}
+              <TreatmentGuidance
+                language={language}
+                fieldPractices={item.advisory.management || item.advisory.treatment || item.advisory.treatments || item.advisory.recommendations}
+                prevention={item.advisory.prevention || item.advisory.preventions}
+                pesticideOptions={item.advisory.pesticide_recommendation}
+                safetyInstructions={item.advisory.pesticide_safety}
+              />
               {item.advisory.sources && item.advisory.sources.length > 0 && (
                 <div className="border-t border-stone-200 pt-3 dark:border-stone-800">
-                  <h4 className="mb-2 text-xs font-semibold text-stone-600 dark:text-stone-300">Sources</h4>
+                  <h4 className="mb-2 text-xs font-semibold text-stone-600 dark:text-stone-300">{language === 'am' ? 'ምንጮች' : 'Sources'}</h4>
                   <ul className="space-y-2">
                     {item.advisory.sources.map((source, index) => (
                       <li key={`${source.title || 'source'}-${index}`} className="text-sm text-stone-700 dark:text-stone-300">
                         {source.url ? <a href={source.url} target="_blank" rel="noreferrer" className="font-medium text-emerald-800 underline dark:text-emerald-300">{source.title || source.organization || source.url}</a> : <span className="font-medium">{source.title || source.organization || `Source ${index + 1}`}</span>}
-                        {(source.organization || source.year || source.source_type) && <span className="ml-1 text-xs text-stone-500">{[source.organization, source.year, source.source_type].filter(Boolean).join(' · ')}</span>}
-                        {source.notes && <p className="mt-0.5 text-xs text-stone-500">{source.notes}</p>}
+                        {(source.organization || source.year || source.source_type) && <span className="ml-1 text-xs text-stone-500">{[source.organization, source.year, ...(language === 'am' ? [] : [source.source_type])].filter(Boolean).join(' · ')}</span>}
+                        {source.notes && language !== 'am' && <p className="mt-0.5 text-xs text-stone-500">{source.notes}</p>}
                       </li>
                     ))}
                   </ul>
@@ -269,7 +364,7 @@ export const DiagnosisDetailPage: React.FC = () => {
               )}
               {item.advisory.validation && Object.keys(item.advisory.validation).length > 0 && (
                 <details className="border-t border-stone-200 pt-3 dark:border-stone-800">
-                  <summary className="cursor-pointer text-xs font-semibold text-stone-600 dark:text-stone-300">Advisory validation details</summary>
+                  <summary className="cursor-pointer text-xs font-semibold text-stone-600 dark:text-stone-300">{language === 'am' ? 'የምክር ማረጋገጫ ዝርዝሮች' : 'Advisory validation details'}</summary>
                   <dl className="mt-3 grid gap-2 sm:grid-cols-2">
                     {Object.entries(item.advisory.validation).map(([key, value]) => (
                       <div key={key} className="rounded-lg bg-stone-50 p-3 dark:bg-stone-900/50">

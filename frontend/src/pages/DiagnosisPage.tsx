@@ -322,6 +322,34 @@ export default function DiagnosisPage() {
     }
   };
 
+  const handleLocalDiagnosis = async () => {
+    if (!selectedFile || analyzing || localAnalyzing) {
+      return;
+    }
+
+    setAnalyzing(true);
+    setLocalAnalyzing(true);
+    setErrorMsg(null);
+    setLocalResult(null);
+
+    try {
+      const result = await localDiagnosisService.predict(selectedFile, user?.id);
+      setLocalResult(result);
+      setModelCached(await localDiagnosisService.isModelCached());
+      notify('Local diagnosis completed using the on-device model.', 'success');
+    } catch (error: unknown) {
+      setErrorMsg(
+        error instanceof Error
+          ? error.message
+          : 'Local diagnosis failed. Please try again.',
+      );
+      setModelCached(await localDiagnosisService.isModelCached());
+    } finally {
+      setAnalyzing(false);
+      setLocalAnalyzing(false);
+    }
+  };
+
   const handleQueueOffline = async () => {
     if (!selectedFile) {
       setErrorMsg('Please select an image first.');
@@ -686,6 +714,25 @@ export default function DiagnosisPage() {
       <>
         <ScanLine className="w-4 h-4" />
         Diagnose
+      </>
+    )}
+  </button>
+
+  <button
+    type="button"
+    disabled={!selectedFile || analyzing || localAnalyzing}
+    onClick={() => void handleLocalDiagnosis()}
+    className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-800 dark:border-emerald-700 text-emerald-900 dark:text-emerald-300 px-5 py-3 text-sm font-semibold hover:bg-emerald-50 dark:hover:bg-emerald-950/30 disabled:opacity-50 disabled:cursor-not-allowed"
+  >
+    {localAnalyzing ? (
+      <>
+        <Loader2 className="w-4 h-4 animate-spin" />
+        {t('localDiagnosisRunning')}
+      </>
+    ) : (
+      <>
+        <ScanLine className="w-4 h-4" />
+        {t('localDiagnosisBtn')}
       </>
     )}
   </button>

@@ -28,10 +28,12 @@ Security:
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, send_from_directory
 from flask_jwt_extended import (
     get_jwt_identity,
     jwt_required,
@@ -287,6 +289,7 @@ def _get_assigned_diagnosis(
 
 def _serialize_diagnosis(
     diagnosis: DiagnosisRecord,
+    include_advisory: bool = False,
 ):
     """
     Convert a DiagnosisRecord into an API-safe
@@ -301,8 +304,15 @@ def _serialize_diagnosis(
         else None
     )
 
-    return {
+    heatmap_filename = (
+        str(diagnosis.heatmap_path or "")
+        .replace("\\", "/")
+        .rsplit("/", 1)[-1]
+    ) or None
+
+    data = {
         "id": diagnosis.id,
+        "farmer_id": farmer.id if farmer else None,
 
         "farmer": {
             "id": (
@@ -347,6 +357,11 @@ def _serialize_diagnosis(
         "image_filename": (
             diagnosis.image_filename
         ),
+        "image_url": (
+            f"/api/extension/diagnoses/{diagnosis.id}/image"
+            if diagnosis.image_filename
+            else None
+        ),
 
         "disease_class": (
             diagnosis.disease_class
@@ -375,6 +390,11 @@ def _serialize_diagnosis(
         "heatmap_path": (
             diagnosis.heatmap_path
         ),
+        "heatmap_url": (
+            f"/api/heatmaps/{heatmap_filename}"
+            if heatmap_filename
+            else None
+        ),
 
         "created_at": (
             diagnosis.created_at.isoformat()
@@ -382,6 +402,46 @@ def _serialize_diagnosis(
             else None
         ),
     }
+
+    if include_advisory:
+        advisory_records = getattr(diagnosis, "advisory_records", [])
+        if advisory_records:
+            advisory_record = max(
+                advisory_records,
+                key=lambda item: item.created_at.isoformat() if item.created_at else "",
+            )
+            stored_text = advisory_record.advisory_text or ""
+            advisory_payload = {}
+            marker = "\n\n__MAIZECARE_ADVISORY_PAYLOAD_V1__\n"
+            if marker in stored_text:
+                readable_text, _, serialized_payload = stored_text.partition(marker)
+                try:
+                    parsed_payload = json.loads(serialized_payload)
+                    if isinstance(parsed_payload, dict):
+                        advisory_payload = parsed_payload
+                        stored_text = readable_text
+                except (TypeError, ValueError):
+                    pass
+
+            data["advisory"] = {
+                **advisory_payload,
+                "id": advisory_record.id,
+                "advisory_id": advisory_record.id,
+                "diagnosis_id": advisory_record.diagnosis_id,
+                "language": advisory_record.language,
+                "advisory_text": stored_text,
+                "description": advisory_payload.get("description") or stored_text,
+                "source": advisory_record.source,
+                "created_at": (
+                    advisory_record.created_at.isoformat()
+                    if advisory_record.created_at
+                    else None
+                ),
+            }
+        else:
+            data["advisory"] = None
+
+    return data
 
 
 # =========================================================
@@ -537,6 +597,20 @@ def get_diagnoses():
             type=str,
         )
 
+        farmer_id_value = request.args.get("farmer_id")
+        farmer_id = None
+        if farmer_id_value:
+            try:
+                farmer_id = int(farmer_id_value)
+                if farmer_id < 1:
+                    raise ValueError
+            except (TypeError, ValueError):
+                return error_response(
+                    "INVALID_FARMER_ID",
+                    "farmer_id must be a positive integer.",
+                    400,
+                )
+
         if disease_class is not None:
 
             disease_class = (
@@ -686,6 +760,11 @@ def get_diagnoses():
                 == disease_class
             )
 
+        if farmer_id is not None:
+            query = query.filter(
+                DiagnosisRecord.user_id == farmer_id
+            )
+
         # =================================================
         # START DATE FILTER
         # =================================================
@@ -753,6 +832,7 @@ def get_diagnoses():
                 },
 
                 "filters": {
+                    "farmer_id": farmer_id,
                     "disease_class": (
                         disease_class
                     ),
@@ -873,7 +953,8 @@ def get_diagnosis(
 
                 "diagnosis": (
                     _serialize_diagnosis(
-                        diagnosis
+                        diagnosis,
+                        include_advisory=True,
                     )
                 ),
             }
@@ -889,6 +970,56 @@ def get_diagnosis(
                 "An error occurred while "
                 "retrieving the diagnosis."
             ),
+            500,
+        )
+
+
+@extension_bp.get("/diagnoses/<int:diagnosis_id>/image")
+@jwt_required()
+@roles_required("extension_agent")
+def get_assigned_diagnosis_image(diagnosis_id: int):
+    """Serve a diagnosis image only when it belongs to the agent's area."""
+    try:
+        _, agent_profile = _get_authenticated_agent()
+        if agent_profile is None:
+            return error_response(
+                "EXTENSION_AGENT_NOT_FOUND",
+                "Extension agent profile was not found.",
+                404,
+            )
+
+        diagnosis = _get_assigned_diagnosis(diagnosis_id, agent_profile)
+        if diagnosis is None:
+            return error_response(
+                "DIAGNOSIS_NOT_FOUND",
+                "Diagnosis was not found in your assigned area.",
+                404,
+            )
+
+        filename = diagnosis.image_filename or ""
+        allowed_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+        if Path(filename).name != filename or Path(filename).suffix.lower() not in allowed_extensions:
+            return error_response(
+                "IMAGE_NOT_FOUND",
+                "Original leaf image could not be found.",
+                404,
+            )
+
+        upload_dir = Path(current_app.config["UPLOAD_DIR"]).resolve()
+        image_path = (upload_dir / filename).resolve()
+        if not image_path.is_relative_to(upload_dir) or not image_path.is_file():
+            return error_response(
+                "IMAGE_NOT_FOUND",
+                "Original leaf image could not be found.",
+                404,
+            )
+
+        return send_from_directory(upload_dir, filename, conditional=True, max_age=3600)
+    except Exception:
+        db.session.rollback()
+        return error_response(
+            "EXTENSION_DIAGNOSIS_IMAGE_ERROR",
+            "Unable to retrieve the assigned diagnosis image.",
             500,
         )
 

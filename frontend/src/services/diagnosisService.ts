@@ -2,6 +2,14 @@ import { apiRequest } from './api';
 import { CompleteDiagnosisResponse, DiagnosisHistoryItem } from '../types/api';
 
 export const diagnosisService = {
+  async getAdvisoryForLanguage(diagnosis: { prediction: { class_name: string; confidence?: number } }, language: 'en' | 'am') {
+    const res = await apiRequest<any>('/api/advisory', {
+      method: 'POST',
+      body: { diagnosis, language },
+    });
+    return (res?.data || res?.advisory || res) as import('../types/api').AdvisoryRecord;
+  },
+
   /**
    * Calls POST /api/diagnosis/complete with multipart/form-data.
    * Returns combined diagnosis, Grad-CAM explainability, and advisory in one call.
