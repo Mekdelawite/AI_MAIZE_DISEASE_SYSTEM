@@ -34,6 +34,8 @@ class FarmerTargetingService:
         region: str,
         woreda: str | None = None,
         kebele: str | None = None,
+        *,
+        sms_only: bool = True,
     ) -> list[dict[str, Any]]:
         """
         Find active farmers who have opted in to SMS alerts
@@ -54,11 +56,11 @@ class FarmerTargetingService:
             .filter(
                 User.role == "farmer",
                 User.is_active.is_(True),
-                FarmerProfile.sms_opt_in.is_(True),
-                User.phone_number.isnot(None),
                 FarmerProfile.region == region,
             )
         )
+        if sms_only:
+            query = query.filter(FarmerProfile.sms_opt_in.is_(True), User.phone_number.isnot(None))
 
         if woreda is not None:
             query = query.filter(FarmerProfile.woreda == woreda)
@@ -68,6 +70,7 @@ class FarmerTargetingService:
 
         farmers = query.all()
 
+        from backend.app.services.crop_calendar_notification_service import CropCalendarNotificationService
         return [
             {
                 "user_id": farmer.id,
@@ -79,6 +82,7 @@ class FarmerTargetingService:
                 "kebele": farmer.farmer_profile.kebele,
             }
             for farmer in farmers
+            if not sms_only or CropCalendarNotificationService.preferences(farmer.farmer_profile)["categories"]["important_alerts"]["sms"]
         ]
 
     @staticmethod

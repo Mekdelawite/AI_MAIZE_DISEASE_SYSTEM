@@ -19,7 +19,7 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from backend.app.services.offline_sync_service import (
@@ -407,9 +407,10 @@ def synchronize_batch():
         except Exception:
             failed += 1
 
-            print(
-                "Batch synchronization unexpected error "
-                f"for operation {operation_id!r}"
+            current_app.logger.exception(
+                "Batch synchronization failed for user_id=%s operation_id=%s",
+                user_id,
+                operation_id,
             )
 
             results.append(

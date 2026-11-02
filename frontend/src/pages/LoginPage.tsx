@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   Eye,
@@ -26,7 +26,6 @@ export const LoginPage: React.FC = () => {
   } = useAuth();
 
   const navigate = useNavigate();
-  const location = useLocation();
 
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
@@ -37,13 +36,7 @@ export const LoginPage: React.FC = () => {
   const [customApiUrl, setCustomApiUrl] = useState(apiBaseUrl);
 
   const navigateAfterLogin = (role: UserRole) => {
-    const fromPath = (location.state as any)?.from?.pathname;
-
-    if (fromPath && fromPath !== '/login') {
-      navigate(fromPath, { replace: true });
-    } else {
-      navigate(getDefaultHomeForRole(role), { replace: true });
-    }
+    navigate(getDefaultHomeForRole(role), { replace: true });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

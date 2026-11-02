@@ -39,11 +39,14 @@ Architecture:
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from backend.app.extensions import db
+from backend.app.models.farmer_notification import FarmerNotification
 from backend.app.models.outbreak_alert import OutbreakAlert
+from backend.app.models.sms_record import SMSRecord
 from backend.app.services.farmer_targeting_service import (
     FarmerTargetingService,
 )
@@ -51,6 +54,8 @@ from backend.app.services.outbreak_detection_service import (
     OutbreakDetectionService,
 )
 from backend.app.services.sms_service import SMSService
+
+logger = logging.getLogger(__name__)
 
 
 class OutbreakAlertError(Exception):
@@ -326,6 +331,71 @@ class OutbreakAlertService:
     # SEND ALERT SMS
     # =====================================================
 
+    def create_alert_notifications(
+        self,
+        alert: OutbreakAlert,
+        farmers: list[dict[str, Any]],
+    ) -> int:
+        """Persist in-app notifications for each targeted farmer."""
+
+        if not farmers:
+            return 0
+
+        location = self.build_location(
+            alert.region,
+            alert.woreda,
+            alert.kebele,
+        )
+
+        created = 0
+        for farmer in farmers:
+            user_id = farmer.get("user_id")
+            if user_id is None:
+                continue
+
+            if FarmerNotification.query.filter_by(
+                user_id=user_id,
+                outbreak_alert_id=alert.id,
+            ).first():
+                continue
+
+            profile = db.session.get(FarmerProfile, user_id)
+            from backend.app.services.crop_calendar_notification_service import CropCalendarNotificationService
+            if profile and not CropCalendarNotificationService.preferences(profile)["categories"]["important_alerts"]["in_app"]:
+                continue
+
+            language = str(farmer.get("preferred_language", "en") or "en").lower()
+            is_amharic = language.startswith("am")
+            title_en = f"Outbreak alert: {alert.disease_class}"
+            title_am = f"የበሽታ ማስጠንቀቂያ: {alert.disease_class}"
+            message_en = (
+                f"{alert.disease_class} outbreak has been reported in {location}. "
+                "Please monitor your crops and follow local advice."
+            )
+            message_am = (
+                f"{alert.disease_class} በ{location} ተመዝግቧል። "
+                "እባክዎ ሰብልዎን ይከታተሉ እና ተገቢውን ምክር ይከተሉ።"
+            )
+
+            notification = FarmerNotification(
+                user_id=user_id,
+                title_en=title_en,
+                title_am=title_am,
+                message_en=message_en,
+                message_am=message_am,
+                region=alert.region,
+                notification_type="outbreak_alert",
+                outbreak_alert_id=alert.id,
+                is_read=False,
+            )
+            db.session.add(notification)
+            created += 1
+
+        if created:
+            db.session.commit()
+
+        return created
+
     def send_alert_sms(
         self,
         alert: OutbreakAlert,
@@ -346,15 +416,32 @@ class OutbreakAlertService:
             kebele=alert.kebele,
         )
 
-        alert.status = "processing"
+        # In-app delivery has independent preferences and is independent from
+        # both SMS consent and category-level SMS choices.
+        app_farmers = self.targeting_service.find_farmers(
+            region=alert.region, woreda=alert.woreda, kebele=alert.kebele, sms_only=False,
+        )
 
+        alert.status = "processing"
         db.session.commit()
+
+        try:
+            self.create_alert_notifications(alert, app_farmers)
+        except Exception:
+            # In-app persistence is independent from SMS delivery. A failure in
+            # one channel must not prevent the other channel from being tried.
+            db.session.rollback()
+            logger.exception(
+                "Could not persist outbreak in-app notifications (alert_id=%s).",
+                alert.id,
+            )
 
         total_recipients = len(farmers)
 
         sms_sent = 0
         sms_failed = 0
         sms_pending = 0
+        sms_duplicates_skipped = 0
 
         location = self.build_location(
             alert.region,
@@ -366,6 +453,32 @@ class OutbreakAlertService:
 
         for farmer in farmers:
             try:
+                user_id = farmer.get("user_id")
+                if user_id is not None and SMSRecord.query.filter_by(
+                    user_id=user_id,
+                    outbreak_alert_id=alert.id,
+                    notification_type="outbreak_alert",
+                ).filter(SMSRecord.status.in_(("sent", "submitted", "pending", "deferred"))).first() is not None:
+                    sms_duplicates_skipped += 1
+                    continue
+
+                profile = db.session.get(FarmerProfile, user_id) if user_id is not None else None
+                from backend.app.services.crop_calendar_notification_service import CropCalendarNotificationService
+                if profile and CropCalendarNotificationService.quiet_now(profile, critical=True):
+                    language = "am" if str(farmer.get("preferred_language", "en")).lower().startswith("am") else "en"
+                    if language == "am":
+                        message = f"የበቆሎ በሽታ ስርጭት ማስጠንቀቂያ። {alert.disease_class} በ{location} ተመዝግቧል። ሰብልዎን ይከታተሉ እና የአካባቢ ምክርን ይከተሉ።"
+                    else:
+                        message = f"Maize disease outbreak alert: {alert.disease_class} has been reported in {location}. Please monitor your crops and follow the recommended advice."
+                    self.sms_service.defer_sms(
+                        farmer["phone_number"], message, user_id=user_id,
+                        dedupe_key=f"outbreak:{alert.id}:{user_id}", notification_type="outbreak_alert",
+                        language=language, region=alert.region, woreda=alert.woreda,
+                        kebele=alert.kebele, outbreak_alert_id=alert.id,
+                    )
+                    sms_pending += 1
+                    continue
+
                 result = (
                     self.sms_service.send_outbreak_alert(
                         recipient_phone=farmer[
@@ -384,6 +497,7 @@ class OutbreakAlertService:
                         woreda=alert.woreda,
                         kebele=alert.kebele,
                         outbreak_alert_id=alert.id,
+                        dedupe_key=f"outbreak:{alert.id}:{user_id}",
                     )
                 )
 
@@ -405,7 +519,13 @@ class OutbreakAlertService:
                 else:
                     sms_pending += 1
 
-            except Exception as exc:
+            except Exception:
+                db.session.rollback()
+                logger.exception(
+                    "Outbreak SMS failed (alert_id=%s, user_id=%s).",
+                    alert.id,
+                    farmer.get("user_id"),
+                )
                 sms_failed += 1
 
                 results.append(
@@ -415,7 +535,7 @@ class OutbreakAlertService:
                         "phone": farmer.get(
                             "phone_number"
                         ),
-                        "error": str(exc),
+                        "error": "SMS delivery failed for this recipient.",
                     }
                 )
 
@@ -465,6 +585,7 @@ class OutbreakAlertService:
             "sms_sent": sms_sent,
             "sms_failed": sms_failed,
             "sms_pending": sms_pending,
+            "sms_duplicates_skipped": sms_duplicates_skipped,
             "results": results,
         }
 

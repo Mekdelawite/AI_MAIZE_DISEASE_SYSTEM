@@ -33,12 +33,16 @@ export const RegionalAlertPage: React.FC = () => {
       } else {
         const farmerCount = result?.farmer_count ?? 0;
         const smsSummary = method === 'app' ? '' : ` SMS provider accepted ${result?.sms_accepted ?? 0}, pending ${result?.sms_pending ?? 0}, failed ${result?.sms_failed ?? 0}.`;
+        const appIssue = Boolean(result?.app_notification_error);
+        const appSummary = appIssue
+          ? ` App notifications could not be persisted: ${result.app_notification_error}`
+          : `App notification and community alert created for ${farmerCount} farmers.`;
         const message = method === 'sms'
           ? `SMS requests processed for ${farmerCount} farmers.${smsSummary}`
-          : `App notification and community alert created for ${farmerCount} farmers.${smsSummary}`;
+          : `${appSummary}${smsSummary}`;
         setOutcome(message);
         const smsIssue = method !== 'app' && ((result?.sms_failed ?? 0) > 0 || (result?.sms_pending ?? 0) > 0);
-        notify(message, smsIssue ? 'warning' : 'success');
+        notify(message, appIssue || smsIssue ? 'warning' : 'success');
         if (method !== 'app' && Array.isArray(result?.sms_results)) {
           const details = result.sms_results.map((item: any) => `${item.phone}: ${item.status}${item.provider_status_code ? ` (${item.provider_status_code})` : ''}${item.provider_message_id ? ` ID ${item.provider_message_id}` : ''}${item.error ? ` — ${item.error}` : ''}`).join('\n');
           if (details) setOutcome(`${message}\n${details}`);

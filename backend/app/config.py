@@ -180,6 +180,9 @@ class Config:
         "AFRICASTALKING_ENVIRONMENT",
         "sandbox",
     )
+    SMART_NOTIFICATIONS_ENABLED = os.getenv("SMART_NOTIFICATIONS_ENABLED", "true").lower() in {"1", "true", "yes"}
+    # Urgent outbreak alerts may bypass quiet hours, but never category or SMS consent.
+    CRITICAL_ALERTS_BYPASS_QUIET_HOURS = os.getenv("CRITICAL_ALERTS_BYPASS_QUIET_HOURS", "true").lower() in {"1", "true", "yes"}
     # -----------------------------------------------------
     # Upload configuration
     # -----------------------------------------------------

@@ -337,6 +337,54 @@ class ExtensionAgentService:
         return user
 
     # =====================================================
+    # CREATE EXTENSION AGENT FROM PAYLOAD
+    # =====================================================
+
+    @classmethod
+    def create_extension_agent(
+        cls,
+        payload: dict[str, Any],
+    ) -> User:
+        """
+        Create an extension agent from an admin payload.
+        """
+
+        required_fields = (
+            "phone_number",
+            "full_name",
+            "password",
+            "region",
+        )
+
+        missing_fields = [
+            field
+            for field in required_fields
+            if not payload.get(field)
+        ]
+
+        if missing_fields:
+            raise ExtensionAgentServiceError(
+                "Missing required fields: "
+                + ", ".join(missing_fields)
+            )
+
+        return cls.create_agent(
+            phone_number=payload["phone_number"],
+            full_name=payload["full_name"],
+            password=payload["password"],
+            region=payload["region"],
+            woreda=payload.get("woreda"),
+            specialization=payload.get("specialization"),
+            certification_number=payload.get(
+                "certification_number"
+            ),
+            preferred_language=payload.get(
+                "preferred_language",
+                "en",
+            ),
+        )
+
+    # =====================================================
     # GET AGENT PROFILE
     # =====================================================
 

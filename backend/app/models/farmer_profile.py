@@ -25,6 +25,7 @@ Relationship:
 from __future__ import annotations
 
 from backend.app.extensions import db
+from sqlalchemy.dialects.postgresql import JSONB
 
 
 class FarmerProfile(db.Model):
@@ -90,6 +91,18 @@ class FarmerProfile(db.Model):
         nullable=False,
         default=False,
     )
+
+    # Nullable for legacy rows; the profile API supplies backward-compatible defaults.
+    notification_preferences = db.Column(db.JSON().with_variant(JSONB, "postgresql"), nullable=True)
+
+    # Optional farmer-confirmed inputs for transparent soil-water estimates.
+    planting_date = db.Column(db.Date, nullable=True)
+    soil_type = db.Column(db.String(40), nullable=True)
+    available_water_capacity_mm_per_m = db.Column(db.Numeric(7, 2), nullable=True)
+    crop_growth_stage = db.Column(db.String(24), nullable=True)
+    irrigation_status = db.Column(db.String(16), nullable=True)
+    last_irrigation_date = db.Column(db.Date, nullable=True)
+    last_irrigation_mm = db.Column(db.Numeric(7, 2), nullable=True)
 
     # =====================================================
     # RELATIONSHIP

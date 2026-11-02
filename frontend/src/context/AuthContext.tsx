@@ -17,6 +17,7 @@ import { UserRecord, UserRole } from '../types/api';
 import { useApp } from './AppContext';
 
 interface AuthContextValue {
+  hasExplicitlyLoggedOut: boolean;
   user: UserRecord | null;
   token: string | null;
   loading: boolean;
@@ -36,6 +37,28 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const PREVIEW_ROLE_KEY = 'maizecare_route_preview_role';
 const OFFLINE_USER_KEY = 'maize_offline_user';
+
+const EXPLICIT_LOGOUT_KEY = 'maizecare_explicit_logout';
+
+function getExplicitLogout(): boolean {
+  try {
+    return localStorage.getItem(EXPLICIT_LOGOUT_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function setExplicitLogout(value: boolean): void {
+  try {
+    if (value) {
+      localStorage.setItem(EXPLICIT_LOGOUT_KEY, 'true');
+    } else {
+      localStorage.removeItem(EXPLICIT_LOGOUT_KEY);
+    }
+  } catch {
+    // Browser storage may be unavailable.
+  }
+}
 
 /**
  * Store the last server-verified profile for offline app restoration.
@@ -103,7 +126,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [offlineMode, setOfflineMode] = useState(false);
-
+  const [hasExplicitlyLoggedOut, setHasExplicitlyLoggedOut] =
+    useState<boolean>(() => getExplicitLogout());
   const [routePreviewRole, setRoutePreviewRoleState] =
     useState<UserRole | null>(() => {
       try {
@@ -152,7 +176,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setSessionError(null);
     setLoading(false);
     setRoutePreviewRole(null);
-
+    setExplicitLogout(true);
+    setHasExplicitlyLoggedOut(true);
     // Intentionally preserve OFFLINE_USER_KEY.
   }, [setRoutePreviewRole]);
 
@@ -311,7 +336,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setUser(cachedUser);
     setOfflineMode(true);
     setLoading(false);
-
+    setExplicitLogout(false);
+    setHasExplicitlyLoggedOut(false);
     setSessionError(
       'Offline mode: server authentication and online features are unavailable.'
     );
@@ -347,7 +373,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setSessionError(null);
       setLoading(false);
       setRoutePreviewRole(null);
-
       // Fetch the full user profile if login returned incomplete data.
       if (!loggedInUser || !loggedInUser.role) {
         try {
@@ -355,6 +380,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
           setUser(me);
           saveOfflineUser(me);
+          setExplicitLogout(false);
+          setHasExplicitlyLoggedOut(false);
 
           if (
             me.preferred_language === 'am' ||
@@ -379,6 +406,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       setUser(loggedInUser);
       saveOfflineUser(loggedInUser);
+      setExplicitLogout(false);
+      setHasExplicitlyLoggedOut(false);
 
       if (
         loggedInUser.preferred_language === 'am' ||
@@ -417,6 +446,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         login,
         logout,
         refreshUser,
+        hasExplicitlyLoggedOut,
       }}
     >
       {children}
