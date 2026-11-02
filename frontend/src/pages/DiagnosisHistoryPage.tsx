@@ -10,6 +10,7 @@ import {
 } from '../components/common/FeedbackStates';
 import { AppShell } from '../components/layout/AppShell';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { apiDownloadBlob } from '../services/api';
 import { diagnosisService } from '../services/diagnosisService';
 import {
@@ -89,6 +90,8 @@ const HistoryImage: React.FC<{
 
 export const DiagnosisHistoryPage: React.FC = () => {
   const { t, notify } = useApp();
+  const { user } = useAuth();
+  const userId = user?.id;
   const navigate = useNavigate();
 
   const [items, setItems] = useState<HistoryRow[]>([]);
@@ -98,7 +101,6 @@ export const DiagnosisHistoryPage: React.FC = () => {
   const [deleteTargetId, setDeleteTargetId] =
     useState<string | number | null>(null);
   const [deleting, setDeleting] = useState(false);
-
   const loadHistory = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -131,8 +133,9 @@ export const DiagnosisHistoryPage: React.FC = () => {
     let localRows: HistoryRow[] = [];
 
     try {
-      const localRecords: OfflineDiagnosisRecord[] =
-        await offlineDiagnosisStore.getAll();
+      const localRecords: OfflineDiagnosisRecord[] = userId === undefined
+        ? []
+        : await offlineDiagnosisStore.getAll(userId);
 
       localRows = localRecords.map((record) => ({
         key: `local-${record.operation_id}`,
@@ -183,7 +186,7 @@ export const DiagnosisHistoryPage: React.FC = () => {
     }
 
     setLoading(false);
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     void loadHistory();
@@ -295,18 +298,36 @@ export const DiagnosisHistoryPage: React.FC = () => {
                 {items.map((item, index) => (
                   <tr
                     key={item.key}
+                    role={item.serverItem ? 'link' : undefined}
                     tabIndex={item.serverItem ? 0 : -1}
-                    aria-label={item.serverItem ? `Open diagnosis record ${item.recordId}` : undefined}
-                    onClick={
+                    aria-label={
                       item.serverItem
-                        ? () => navigate(`/farmer/history/${encodeURIComponent(String(item.recordId))}`)
+                        ? `Open diagnosis record ${item.recordId}`
                         : undefined
                     }
+                    onClick={(event) => {
+                      if (
+                        item.serverItem &&
+                        !(event.target as HTMLElement).closest('a, button')
+                      ) {
+                        navigate(
+                          `/farmer/history/${encodeURIComponent(String(item.recordId))}`
+                        );
+                      }
+                    }}
                     onKeyDown={(event) => {
-                      if (!item.serverItem || event.target !== event.currentTarget) return;
+                      if (
+                        !item.serverItem ||
+                        event.target !== event.currentTarget
+                      ) {
+                        return;
+                      }
+
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault();
-                        navigate(`/farmer/history/${encodeURIComponent(String(item.recordId))}`);
+                        navigate(
+                          `/farmer/history/${encodeURIComponent(String(item.recordId))}`
+                        );
                       }
                     }}
                     className={`hover:bg-stone-50/80 dark:hover:bg-stone-800/40 transition-colors ${

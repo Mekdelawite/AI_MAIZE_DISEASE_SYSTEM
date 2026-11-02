@@ -210,6 +210,8 @@ class DiagnosisAdvisoryIntegrationService:
             "favorable_conditions",
             "prevention",
             "management",
+            "pesticide_recommendation",
+            "pesticide_safety",
             "sources",
             "validation",
             "disclaimer",

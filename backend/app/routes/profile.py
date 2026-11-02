@@ -28,12 +28,58 @@ The authenticated user's ID is obtained from the JWT.
 
 from __future__ import annotations
 
+from datetime import date
+
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from backend.app.extensions import db
 from backend.app.models.farmer_profile import FarmerProfile
 from backend.app.models.user import User
+
+NOTIFICATION_CATEGORIES = ("crop_activity", "weather_alert", "soil_water_alert", "agricultural_advisory", "important_alerts")
+DEFAULT_NOTIFICATION_PREFERENCES = {
+    "categories": {key: {"in_app": True, "sms": True} for key in NOTIFICATION_CATEGORIES},
+    "reminder_days_before": 0,
+    "quiet_hours": {"enabled": False, "start": "21:00", "end": "07:00"},
+    "timezone": "Africa/Addis_Ababa",
+}
+
+
+def _notification_preferences(profile):
+    saved = profile.notification_preferences or {}
+    if not isinstance(saved, dict):
+        saved = {}
+    result = {**DEFAULT_NOTIFICATION_PREFERENCES, **saved}
+    result["categories"] = {key: {**DEFAULT_NOTIFICATION_PREFERENCES["categories"][key], **(saved.get("categories", {}).get(key) or {})} for key in NOTIFICATION_CATEGORIES}
+    result["quiet_hours"] = {**DEFAULT_NOTIFICATION_PREFERENCES["quiet_hours"], **(saved.get("quiet_hours") or {})}
+    return result
+
+
+def _valid_notification_preferences(value):
+    if not isinstance(value, dict) or set(value) != {"categories", "reminder_days_before", "quiet_hours", "timezone"}:
+        return False
+    categories = value.get("categories")
+    if not isinstance(categories, dict) or set(categories) != set(NOTIFICATION_CATEGORIES):
+        return False
+    if any(not isinstance(v, dict) or set(v) != {"in_app", "sms"} or any(not isinstance(v[k], bool) for k in ("in_app", "sms")) for v in categories.values()):
+        return False
+    if type(value.get("reminder_days_before")) is not int or value["reminder_days_before"] not in (0, 1, 2, 3):
+        return False
+    quiet = value.get("quiet_hours")
+    if not isinstance(quiet, dict) or set(quiet) != {"enabled", "start", "end"} or not isinstance(quiet.get("enabled"), bool):
+        return False
+    import re
+    if any(not isinstance(quiet.get(k), str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", quiet[k]) for k in ("start", "end")):
+        return False
+    if not isinstance(value.get("timezone"), str) or len(value["timezone"]) > 64:
+        return False
+    try:
+        from zoneinfo import ZoneInfo
+        ZoneInfo(value["timezone"])
+    except Exception:
+        return False
+    return True
 
 
 # =========================================================
@@ -162,6 +208,14 @@ def _serialize_farmer_profile(
             else None
         ),
         "sms_opt_in": farmer_profile.sms_opt_in,
+        "notification_preferences": _notification_preferences(farmer_profile),
+        "planting_date": farmer_profile.planting_date.isoformat() if farmer_profile.planting_date else None,
+        "soil_type": farmer_profile.soil_type,
+        "available_water_capacity_mm_per_m": float(farmer_profile.available_water_capacity_mm_per_m) if farmer_profile.available_water_capacity_mm_per_m is not None else None,
+        "crop_growth_stage": farmer_profile.crop_growth_stage,
+        "irrigation_status": farmer_profile.irrigation_status,
+        "last_irrigation_date": farmer_profile.last_irrigation_date.isoformat() if farmer_profile.last_irrigation_date else None,
+        "last_irrigation_mm": float(farmer_profile.last_irrigation_mm) if farmer_profile.last_irrigation_mm is not None else None,
     }
 
 
@@ -271,6 +325,14 @@ def update_profile():
         "latitude",
         "longitude",
         "sms_opt_in",
+        "planting_date",
+        "soil_type",
+        "available_water_capacity_mm_per_m",
+        "crop_growth_stage",
+        "irrigation_status",
+        "last_irrigation_date",
+        "last_irrigation_mm",
+        "notification_preferences",
     }
 
     unknown_fields = set(data.keys()) - allowed_fields
@@ -415,11 +477,22 @@ def update_profile():
         "latitude",
         "longitude",
         "sms_opt_in",
+        "planting_date",
+        "soil_type",
+        "available_water_capacity_mm_per_m",
+        "crop_growth_stage",
+        "irrigation_status",
+        "last_irrigation_date",
+        "last_irrigation_mm",
+        "notification_preferences",
     }
 
     has_farmer_fields = bool(
         farmer_fields.intersection(data.keys())
     )
+
+    if "notification_preferences" in data and not _valid_notification_preferences(data["notification_preferences"]):
+        return jsonify({"success": False, "error": {"code": "INVALID_NOTIFICATION_PREFERENCES", "message": "Notification preferences contain invalid categories, channels, timing, quiet hours, or timezone."}}), 400
 
     farmer_profile = None
 
@@ -462,6 +535,82 @@ def update_profile():
             )
 
             db.session.add(farmer_profile)
+
+        if "notification_preferences" in data:
+            farmer_profile.notification_preferences = data["notification_preferences"]
+
+        # Validate optional agricultural estimate inputs before assigning them.
+        date_fields = ("planting_date", "last_irrigation_date")
+        for field in date_fields:
+            if field in data:
+                value = data[field]
+                if value in (None, ""):
+                    setattr(farmer_profile, field, None)
+                elif not isinstance(value, str):
+                    return jsonify({"success": False, "error": {"code": "INVALID_DATE", "message": f"{field} must use YYYY-MM-DD."}}), 400
+                else:
+                    try:
+                        parsed = date.fromisoformat(value)
+                    except ValueError:
+                        return jsonify({"success": False, "error": {"code": "INVALID_DATE", "message": f"{field} must use YYYY-MM-DD."}}), 400
+                    if parsed > date.today():
+                        return jsonify({"success": False, "error": {"code": "INVALID_DATE", "message": f"{field} cannot be in the future."}}), 400
+                    setattr(farmer_profile, field, parsed)
+
+        if "soil_type" in data:
+            soil = data["soil_type"]
+            allowed_soils = {"sand", "loamy_sand", "sandy_loam", "loam", "silt_loam", "silt", "sandy_clay_loam", "clay_loam", "silty_clay_loam", "sandy_clay", "silty_clay", "clay"}
+            if soil in (None, ""):
+                farmer_profile.soil_type = None
+            elif not isinstance(soil, str) or soil not in allowed_soils:
+                return jsonify({"success": False, "error": {"code": "INVALID_SOIL_TYPE", "message": "Select a supported soil texture."}}), 400
+            else:
+                farmer_profile.soil_type = soil
+
+        if "available_water_capacity_mm_per_m" in data:
+            raw = data["available_water_capacity_mm_per_m"]
+            if raw in (None, ""):
+                farmer_profile.available_water_capacity_mm_per_m = None
+            else:
+                try:
+                    awc = float(raw)
+                except (TypeError, ValueError):
+                    return jsonify({"success": False, "error": {"code": "INVALID_AWC", "message": "Available water capacity must be numeric."}}), 400
+                if not 1 <= awc <= 300:
+                    return jsonify({"success": False, "error": {"code": "INVALID_AWC", "message": "Available water capacity must be between 1 and 300 mm/m."}}), 400
+                farmer_profile.available_water_capacity_mm_per_m = awc
+
+        if "crop_growth_stage" in data:
+            stage = data["crop_growth_stage"]
+            allowed_stages = {"initial", "development", "mid_season", "late_season"}
+            if stage in (None, ""):
+                farmer_profile.crop_growth_stage = None
+            elif not isinstance(stage, str) or stage not in allowed_stages:
+                return jsonify({"success": False, "error": {"code": "INVALID_GROWTH_STAGE", "message": "Select a supported maize growth stage."}}), 400
+            else:
+                farmer_profile.crop_growth_stage = stage
+
+        if "irrigation_status" in data:
+            status = data["irrigation_status"]
+            if status in (None, ""):
+                farmer_profile.irrigation_status = None
+            elif status not in {"unknown", "rainfed", "irrigated"}:
+                return jsonify({"success": False, "error": {"code": "INVALID_IRRIGATION_STATUS", "message": "Select unknown, rainfed, or irrigated."}}), 400
+            else:
+                farmer_profile.irrigation_status = status
+
+        if "last_irrigation_mm" in data:
+            raw = data["last_irrigation_mm"]
+            if raw in (None, ""):
+                farmer_profile.last_irrigation_mm = None
+            else:
+                try:
+                    depth = float(raw)
+                except (TypeError, ValueError):
+                    return jsonify({"success": False, "error": {"code": "INVALID_IRRIGATION", "message": "Irrigation depth must be numeric."}}), 400
+                if not 0 < depth <= 200:
+                    return jsonify({"success": False, "error": {"code": "INVALID_IRRIGATION", "message": "Irrigation depth must be between 0 and 200 mm."}}), 400
+                farmer_profile.last_irrigation_mm = depth
 
         # -------------------------------------------------
         # REGION

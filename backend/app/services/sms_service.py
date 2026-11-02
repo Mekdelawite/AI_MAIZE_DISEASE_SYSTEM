@@ -194,6 +194,7 @@ class SMSService:
         woreda: str | None = None,
         kebele: str | None = None,
         outbreak_alert_id: int | None = None,
+        dedupe_key: str | None = None,
     ) -> dict[str, Any]:
         """
         Send an SMS and record the result in PostgreSQL.
@@ -207,11 +208,15 @@ class SMSService:
         if not message or not message.strip():
             raise ValueError("SMS message cannot be empty.")
 
+        existing = SMSRecord.query.filter_by(user_id=user_id, dedupe_key=dedupe_key).first() if user_id is not None and dedupe_key else None
+        if existing is not None and existing.status != "deferred":
+            return {"success": existing.status in {"sent", "submitted"}, "status": existing.status, "duplicate": True, "sms_record_id": existing.id}
+
         # -------------------------------------------------
         # Create database record
         # -------------------------------------------------
 
-        sms_record = SMSRecord(
+        sms_record = existing or SMSRecord(
             recipient_phone=phone,
             recipient_type=recipient_type,
             message=message,
@@ -221,12 +226,17 @@ class SMSService:
             status="pending",
             user_id=user_id,
             outbreak_alert_id=outbreak_alert_id,
+            dedupe_key=dedupe_key,
             region=region,
             woreda=woreda,
             kebele=kebele,
         )
 
-        db.session.add(sms_record)
+        if existing is None:
+            db.session.add(sms_record)
+        else:
+            sms_record.status = "pending"
+            sms_record.error_message = None
         db.session.commit()
 
         # -------------------------------------------------
@@ -507,6 +517,7 @@ class SMSService:
         kebele: str | None = None,
         outbreak_alert_id: int | None = None,
         message: str | None = None,
+        dedupe_key: str | None = None,
     ) -> dict[str, Any]:
         """Send a disease outbreak alert."""
 
@@ -538,4 +549,25 @@ class SMSService:
             region=region,
             woreda=woreda,
             kebele=kebele,
+            dedupe_key=dedupe_key,
         )
+
+    @classmethod
+    def defer_sms(cls, recipient_phone: str, message: str, *, user_id: int, dedupe_key: str,
+                  notification_type: str, language: str, region: str | None = None,
+                  woreda: str | None = None, kebele: str | None = None,
+                  outbreak_alert_id: int | None = None) -> SMSRecord:
+        """Persist an urgent SMS for after quiet hours, without contacting the provider."""
+        existing = SMSRecord.query.filter_by(user_id=user_id, dedupe_key=dedupe_key).first()
+        if existing is not None:
+            return existing
+        record = SMSRecord(
+            recipient_phone=cls._normalize_phone(recipient_phone), recipient_type="farmer",
+            message=message, language=language, notification_type=notification_type,
+            provider="africas_talking", status="deferred", user_id=user_id,
+            outbreak_alert_id=outbreak_alert_id, dedupe_key=dedupe_key,
+            region=region, woreda=woreda, kebele=kebele,
+        )
+        db.session.add(record)
+        db.session.commit()
+        return record

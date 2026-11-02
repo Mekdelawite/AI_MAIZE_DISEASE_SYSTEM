@@ -2,11 +2,13 @@ import { apiRequest } from './api';
 import { DiagnosisHistoryItem } from '../types/api';
 
 export interface ExtensionDiagnosesFilter {
+  farmer_id?: string | number;
   disease_class?: string;
   woreda?: string;
   start_date?: string;
   end_date?: string;
   page?: number;
+  per_page?: number;
   limit?: number;
 }
 
@@ -18,6 +20,7 @@ function normalizeDiagnosis(item: any): DiagnosisHistoryItem {
     ...item,
     id: item?.id ?? item?.diagnosis_id,
     diagnosis_id: item?.diagnosis_id ?? item?.id,
+    farmer_id: item?.farmer_id ?? farmer.id,
     farmer_name: item?.farmer_name ?? farmer.full_name ?? farmer.name,
     farmer_phone: item?.farmer_phone ?? farmer.phone_number ?? farmer.phone,
     region: item?.region ?? location.region,
@@ -37,6 +40,7 @@ export const extensionService = {
   async getDiagnoses(filters: ExtensionDiagnosesFilter = {}): Promise<{
     items: DiagnosisHistoryItem[];
     total: number;
+    pages: number;
   }> {
     const res = await apiRequest<any>('/api/extension/diagnoses', {
       method: 'GET',
@@ -55,6 +59,7 @@ export const extensionService = {
     return {
       items,
       total: Number(res?.total ?? res?.pagination?.total ?? items.length),
+      pages: Number(res?.pages ?? res?.pagination?.pages ?? 1),
     };
   },
 

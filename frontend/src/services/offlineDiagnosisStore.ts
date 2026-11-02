@@ -2,12 +2,13 @@
 import type { LocalDiagnosisResult } from './localDiagnosisService';
 
 const DB_NAME = 'maizecare-offline-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'diagnoses';
 const MAX_IMAGE_SIZE = 450 * 1024;
 
 export interface OfflineDiagnosisRecord {
   operation_id: string;
+  user_id?: string | number;
   className: LocalDiagnosisResult['className'];
   confidence: number;
   probabilities: number[];
@@ -84,14 +85,20 @@ function openDatabase(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = () => {
       const db = request.result;
-
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, {
+      const store = db.objectStoreNames.contains(STORE_NAME)
+        ? request.transaction!.objectStore(STORE_NAME)
+        : db.createObjectStore(STORE_NAME, {
           keyPath: 'operation_id',
         });
 
+      if (!store.indexNames.contains('created_at')) {
         store.createIndex('created_at', 'created_at');
+      }
+      if (!store.indexNames.contains('sync_status')) {
         store.createIndex('sync_status', 'sync_status');
+      }
+      if (!store.indexNames.contains('user_id')) {
+        store.createIndex('user_id', 'user_id');
       }
     };
 
@@ -105,7 +112,17 @@ export const offlineDiagnosisStore = {
   async save(
     result: LocalDiagnosisResult,
     image: File,
+    userId: string | number,
   ): Promise<OfflineDiagnosisRecord> {
+    if (
+      !(
+        (typeof userId === 'number' && Number.isFinite(userId)) ||
+        (typeof userId === 'string' && userId.trim())
+      )
+    ) {
+      throw new Error('An authenticated user ID is required to save an offline diagnosis.');
+    }
+
     const db = await openDatabase();
 
     try {
@@ -113,6 +130,7 @@ export const offlineDiagnosisStore = {
 
       const record: OfflineDiagnosisRecord = {
         operation_id: crypto.randomUUID(),
+        user_id: userId,
         className: result.className,
         confidence: result.confidence,
         probabilities: [...result.probabilities],
@@ -139,13 +157,16 @@ export const offlineDiagnosisStore = {
     }
   },
 
-  async getAll(): Promise<OfflineDiagnosisRecord[]> {
+  async getAll(userId: string | number): Promise<OfflineDiagnosisRecord[]> {
     const db = await openDatabase();
 
     try {
       return await new Promise((resolve, reject) => {
         const transaction = db.transaction(STORE_NAME, 'readonly');
-        const request = transaction.objectStore(STORE_NAME).getAll();
+        const request = transaction
+          .objectStore(STORE_NAME)
+          .index('user_id')
+          .getAll(userId);
 
         request.onsuccess = () => {
           const records = request.result as OfflineDiagnosisRecord[];
@@ -167,8 +188,8 @@ export const offlineDiagnosisStore = {
     }
   },
 
-  async getPending(): Promise<OfflineDiagnosisRecord[]> {
-    const records = await this.getAll();
+  async getPending(userId: string | number): Promise<OfflineDiagnosisRecord[]> {
+    const records = await this.getAll(userId);
     return records.filter((record) => record.sync_status === 'pending');
   },
 

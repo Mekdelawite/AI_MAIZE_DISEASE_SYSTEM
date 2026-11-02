@@ -18,6 +18,8 @@ No duplicate location information is stored.
 
 from __future__ import annotations
 
+import logging
+
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 import requests
@@ -38,6 +40,7 @@ weather_bp = Blueprint(
     __name__,
     url_prefix="/api/weather",
 )
+logger = logging.getLogger(__name__)
 
 
 # =========================================================
@@ -151,6 +154,7 @@ def current_weather():
     # -----------------------------------------------------
 
     except Exception:
+        logger.exception("Unexpected error retrieving current weather")
         return jsonify(
             {
                 "success": False,
@@ -380,6 +384,7 @@ def farmer_weather():
     # -----------------------------------------------------
 
     except Exception:
+        logger.exception("Unexpected error retrieving farmer weather")
         return jsonify(
             {
                 "success": False,
@@ -392,3 +397,78 @@ def farmer_weather():
                 },
             }
         ), 500
+
+
+@weather_bp.get("/farmer/forecast")
+@jwt_required()
+@roles_required("farmer")
+def farmer_weather_forecast():
+    """Get the next seven forecast days for the authenticated farmer's saved location."""
+    identity = get_jwt_identity()
+    try:
+        user_id = int(identity)
+    except (TypeError, ValueError):
+        return jsonify({
+            "success": False,
+            "error": {"code": "INVALID_USER_ID", "message": "Authenticated user identity is invalid."},
+        }), 401
+
+    try:
+        user = db.session.get(User, user_id)
+        if user is None:
+            return jsonify({
+                "success": False,
+                "error": {"code": "USER_NOT_FOUND", "message": "Authenticated user was not found."},
+            }), 404
+        if not user.is_active:
+            return jsonify({
+                "success": False,
+                "error": {"code": "USER_INACTIVE", "message": "This user account is inactive."},
+            }), 403
+
+        profile = db.session.get(FarmerProfile, user.id)
+        if profile is None:
+            return jsonify({
+                "success": False,
+                "error": {"code": "FARMER_PROFILE_NOT_FOUND", "message": "Farmer profile was not found."},
+            }), 404
+        if profile.latitude is None or profile.longitude is None:
+            return jsonify({
+                "success": False,
+                "error": {"code": "LOCATION_NOT_CONFIGURED", "message": "Save farm coordinates in your profile to view the forecast."},
+            }), 400
+
+        forecast = WeatherService.get_forecast_by_coordinates(
+            latitude=float(profile.latitude),
+            longitude=float(profile.longitude),
+        )
+        return jsonify({
+            "success": True,
+            "data": {
+                "farmer_location": {
+                    "region": profile.region,
+                    "woreda": profile.woreda,
+                    "kebele": profile.kebele,
+                    "latitude": float(profile.latitude),
+                    "longitude": float(profile.longitude),
+                },
+                "forecast": forecast,
+            },
+        }), 200
+    except ValueError as error:
+        return jsonify({
+            "success": False,
+            "error": {"code": "WEATHER_REQUEST_ERROR", "message": str(error)},
+        }), 400
+    except requests.RequestException:
+        logger.exception("Weather provider unavailable for farmer forecast")
+        return jsonify({
+            "success": False,
+            "error": {"code": "WEATHER_SERVICE_UNAVAILABLE", "message": "Forecast information is unavailable right now."},
+        }), 503
+    except Exception:
+        logger.exception("Unexpected error retrieving farmer weather forecast")
+        return jsonify({
+            "success": False,
+            "error": {"code": "WEATHER_INTERNAL_ERROR", "message": "An unexpected error occurred while retrieving the forecast."},
+        }), 500

@@ -24,7 +24,6 @@ export const ExtensionAgentManagementPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [region, setRegion] = useState('Oromia');
   const [woreda, setWoreda] = useState('');
-  const [kebele, setKebele] = useState('');
   const [preferredLanguage, setPreferredLanguage] = useState<'en' | 'am'>('en');
   const [creating, setCreating] = useState(false);
 
@@ -72,7 +71,6 @@ export const ExtensionAgentManagementPage: React.FC = () => {
         password,
         region: region.trim(),
         woreda: woreda.trim(),
-        kebele: kebele.trim() || undefined,
         preferred_language: preferredLanguage,
       });
       notify('Extension agent account created on server.', 'success');
@@ -81,7 +79,6 @@ export const ExtensionAgentManagementPage: React.FC = () => {
       setPhoneNumber('');
       setPassword('');
       setWoreda('');
-      setKebele('');
       loadAgents();
     } catch (err: any) {
       notify(err?.message || 'Failed to create extension agent account.', 'error');
@@ -285,7 +282,7 @@ export const ExtensionAgentManagementPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1">
                     Region *
@@ -307,17 +304,6 @@ export const ExtensionAgentManagementPage: React.FC = () => {
                     required
                     value={woreda}
                     onChange={(e) => setWoreda(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1">
-                    Kebele (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={kebele}
-                    onChange={(e) => setKebele(e.target.value)}
                     className="w-full px-3 py-2 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
                   />
                 </div>

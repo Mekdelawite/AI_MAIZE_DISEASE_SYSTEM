@@ -21,6 +21,7 @@ from flask import Blueprint, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from backend.app.extensions import db
+from backend.app.models.extension_agent import ExtensionAgent
 from backend.app.models.outbreak_alert import OutbreakAlert
 from backend.app.services.auth_service import AuthService
 from backend.app.services.outbreak_alert_service import OutbreakAlertService
@@ -366,7 +367,8 @@ def get_outbreak_alerts():
     """
     Get outbreak alert history.
 
-    Admin only.
+    Admins can inspect all alerts. Extension agents can inspect
+    alerts in their assigned region and, when configured, woreda.
 
     Optional query parameters:
 
@@ -387,13 +389,26 @@ def get_outbreak_alerts():
             401,
         )
 
-    if not admin_required():
+    is_admin = admin_required()
+    is_extension_agent = str(get_jwt().get("role", "")).lower() == "extension_agent"
+    if not is_admin and not is_extension_agent:
         return error_response(
-            "Admin access required.",
+            "Admin or extension-agent access required.",
             403,
         )
 
+    agent_profile = None
+    if is_extension_agent:
+        agent_profile = db.session.get(ExtensionAgent, user.id)
+        if agent_profile is None:
+            return error_response("Extension-agent profile not found.", 403)
+
     query = OutbreakAlert.query
+
+    if agent_profile is not None:
+        query = query.filter(OutbreakAlert.region == agent_profile.region)
+        if agent_profile.woreda:
+            query = query.filter(OutbreakAlert.woreda == agent_profile.woreda)
 
     disease_class = request.args.get("disease_class", "").strip()
 
@@ -468,7 +483,8 @@ def get_outbreak_alert(alert_id):
     """
     Get one outbreak alert by ID.
 
-    Admin only.
+    Admins can inspect any alert. Extension agents can inspect
+    alerts in their assigned region and, when configured, woreda.
     """
 
     user = get_authenticated_user()
@@ -479,9 +495,11 @@ def get_outbreak_alert(alert_id):
             401,
         )
 
-    if not admin_required():
+    is_admin = admin_required()
+    is_extension_agent = str(get_jwt().get("role", "")).lower() == "extension_agent"
+    if not is_admin and not is_extension_agent:
         return error_response(
-            "Admin access required.",
+            "Admin or extension-agent access required.",
             403,
         )
 
@@ -492,6 +510,15 @@ def get_outbreak_alert(alert_id):
             "Outbreak alert not found.",
             404,
         )
+
+    if is_extension_agent:
+        agent_profile = db.session.get(ExtensionAgent, user.id)
+        if (
+            agent_profile is None
+            or alert.region != agent_profile.region
+            or (agent_profile.woreda and alert.woreda != agent_profile.woreda)
+        ):
+            return error_response("Outbreak alert not found.", 404)
 
     service = OutbreakAlertService()
 

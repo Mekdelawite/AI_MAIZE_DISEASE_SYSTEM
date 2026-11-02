@@ -37,6 +37,7 @@ class SMSRecord(db.Model):
     """
 
     __tablename__ = "sms_records"
+    __table_args__ = (db.Index("uq_sms_user_dedupe_key", "user_id", "dedupe_key", unique=True, postgresql_where=db.text("dedupe_key IS NOT NULL")),)
 
     # =====================================================
     # PRIMARY KEY
@@ -89,6 +90,7 @@ class SMSRecord(db.Model):
         default="general",
         index=True,
     )
+    dedupe_key = db.Column(db.String(180), nullable=True)
 
     # =====================================================
     # PROVIDER INFORMATION

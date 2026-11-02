@@ -26,14 +26,11 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import numpy as np
-from tensorflow.keras.utils import (
-    load_img,
-    img_to_array,
-)
 
 from gradcam import GradCAM
 from heatmap import HeatmapGenerator
 from overlay import GradCAMOverlay
+from preprocess import ImagePreprocessor
 
 
 class ExplainabilityService:
@@ -109,7 +106,9 @@ class ExplainabilityService:
         image_path: Path,
     ) -> np.ndarray:
         """
-        Preprocess image for MobileNetV2.
+        Use the same preprocessing pipeline as normal
+        diagnosis inference so Grad-CAM sees the exact
+        tensor used to choose the predicted class.
         """
 
         image_path = Path(
@@ -123,32 +122,9 @@ class ExplainabilityService:
                 f"{image_path}"
             )
 
-        image = load_img(
-            image_path,
-            target_size=(
-                224,
-                224,
-            ),
-            color_mode="rgb",
+        return ImagePreprocessor.preprocess(
+            str(image_path)
         )
-
-        image_array = img_to_array(
-            image
-        ).astype(
-            np.float32
-        )
-
-        # MobileNetV2 preprocessing
-        image_array = (
-            image_array / 127.5
-        ) - 1.0
-
-        image_array = np.expand_dims(
-            image_array,
-            axis=0,
-        )
-
-        return image_array
 
     # -----------------------------------------------------
     # Explain image

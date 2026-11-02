@@ -1,5 +1,5 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
@@ -13,11 +13,13 @@ import {
 import { PublicLayout } from '../components/layout/PublicLayout';
 import { useApp } from '../context/AppContext';
 import { authService } from '../services/authService';
+import { locationService, type WoredaOption } from '../services/locationService';
 
 const ETHIOPIAN_REGIONS = [
   'Oromia',
   'Amhara',
-  'SNNPR',
+  'Central Ethiopia',
+  'South Ethiopia',
   'Sidama',
   'South West Ethiopia',
   'Tigray',
@@ -29,6 +31,13 @@ const ETHIOPIAN_REGIONS = [
   'Dire Dawa',
   'Addis Ababa',
 ];
+
+const REGION_NAMES_AM: Record<string, string> = {
+  Oromia: 'ኦሮሚያ', Amhara: 'አማራ', 'Central Ethiopia': 'መካከለኛ ኢትዮጵያ',
+  'South Ethiopia': 'ደቡብ ኢትዮጵያ', Sidama: 'ሲዳማ', 'South West Ethiopia': 'ደቡብ ምዕራብ ኢትዮጵያ',
+  Tigray: 'ትግራይ', 'Benishangul-Gumuz': 'ቤንሻንጉል ጉሙዝ', Gambela: 'ጋምቤላ',
+  Somali: 'ሶማሌ', Afar: 'አፋር', Harari: 'ሐረሪ', 'Dire Dawa': 'ድሬዳዋ', 'Addis Ababa': 'አዲስ አበባ',
+};
 
 const OTP_LENGTH = 6;
 
@@ -43,12 +52,42 @@ export const RegisterPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [region, setRegion] = useState('Oromia');
   const [woreda, setWoreda] = useState('');
+  const [woredaOptions, setWoredaOptions] = useState<WoredaOption[]>([]);
+  const [woredaLoading, setWoredaLoading] = useState(false);
+  const [woredaError, setWoredaError] = useState('');
+  const [woredaReload, setWoredaReload] = useState(0);
+  const woredaRequestRef = useRef(0);
   const [kebele, setKebele] = useState('');
   const [preferredLanguage, setPreferredLanguage] =
     useState<'en' | 'am'>(language);
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [smsOptIn, setSmsOptIn] = useState(true);
+
+  const loadWoredaOptions = async (selectedRegion: string, preserveSelection = false) => {
+    const requestId = ++woredaRequestRef.current;
+    if (!preserveSelection) setWoreda('');
+    setWoredaOptions([]);
+    setWoredaError('');
+    setWoredaLoading(true);
+    try {
+      const options = await locationService.getWoredasForRegion(selectedRegion, preferredLanguage);
+      if (requestId === woredaRequestRef.current) setWoredaOptions(options);
+    } catch (err: any) {
+      if (requestId === woredaRequestRef.current) setWoredaError(err?.message || 'Could not load Woredas for this region.');
+    } finally {
+      if (requestId === woredaRequestRef.current) setWoredaLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (region) void loadWoredaOptions(region, true);
+  }, [preferredLanguage]);
+
+  useEffect(() => {
+    void loadWoredaOptions(region);
+    return () => { woredaRequestRef.current += 1; };
+  }, [woredaReload]);
 
   // OTP flow
   const [showVerificationScreen, setShowVerificationScreen] =
@@ -599,13 +638,17 @@ export const RegisterPage: React.FC = () => {
                   <select
                     id="reg-region"
                     value={region}
-                    onChange={(e) => setRegion(e.target.value)}
+                    onChange={(e) => {
+                      const selectedRegion = e.target.value;
+                      setRegion(selectedRegion);
+                      void loadWoredaOptions(selectedRegion);
+                    }}
                     disabled={otpLoading || loading}
                     className="w-full px-3 py-2 text-sm rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
                   >
                     {ETHIOPIAN_REGIONS.map((r) => (
                       <option key={r} value={r}>
-                        {r}
+                        {preferredLanguage === 'am' ? REGION_NAMES_AM[r] || r : r}
                       </option>
                     ))}
                   </select>
@@ -619,16 +662,23 @@ export const RegisterPage: React.FC = () => {
                     {t('woredaLabel')} *
                   </label>
 
-                  <input
+                  <select
                     id="reg-woreda"
-                    type="text"
                     required
                     value={woreda}
                     onChange={(e) => setWoreda(e.target.value)}
-                    placeholder="e.g. Bako Tibe"
-                    disabled={otpLoading || loading}
+                    disabled={otpLoading || loading || woredaLoading || woredaOptions.length === 0}
                     className="w-full px-3 py-2 text-sm rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
-                  />
+                  >
+                    <option value="">{woredaLoading ? (preferredLanguage === 'am' ? `${REGION_NAMES_AM[region] || region} ወረዳዎች በመጫን ላይ…` : `Loading ${region} Woredas…`) : (preferredLanguage === 'am' ? `${REGION_NAMES_AM[region] || region} ውስጥ ወረዳ ይምረጡ` : `Select a Woreda in ${region}`)}</option>
+                    {woredaOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                  {!woredaLoading && !woredaError && <p className="mt-1 text-[11px] text-stone-500" aria-live="polite">{preferredLanguage === 'am' ? `${region === '' ? '' : REGION_NAMES_AM[region] || region} ውስጥ ${woredaOptions.length} ወረዳዎች ይገኛሉ።` : `${woredaOptions.length} Woredas available in ${region}.`}</p>}
+                  <p className="mt-1 text-[11px] text-stone-500">{preferredLanguage === 'am' ? 'የወረዳ ስሞች፦ Open Admin Data፣ CC BY 4.0።' : 'Woreda names: Open Admin Data, CC BY 4.0.'}</p>
+                  {woredaError && <div className="mt-1 flex items-center gap-2 text-xs text-red-700 dark:text-red-300" role="alert">
+                    <span>{woredaError}</span>
+                    <button type="button" onClick={() => setWoredaReload((n) => n + 1)} className="font-semibold underline">{preferredLanguage === 'am' ? 'እንደገና ሞክር' : 'Retry'}</button>
+                  </div>}
                 </div>
 
                 <div>

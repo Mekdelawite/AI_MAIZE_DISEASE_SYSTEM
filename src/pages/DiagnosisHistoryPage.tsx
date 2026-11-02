@@ -22,7 +22,6 @@ export const DiagnosisHistoryPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | number | null>(null);
   const [deleting, setDeleting] = useState(false);
-
   const loadHistory = useCallback(async () => {
     setLoading(true);
     setError(null);

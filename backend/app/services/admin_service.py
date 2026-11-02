@@ -39,6 +39,7 @@ from backend.app.models.farmer_profile import FarmerProfile
 from backend.app.models.extension_agent import ExtensionAgent
 from backend.app.models.diagnosis_record import DiagnosisRecord
 from backend.app.models.extension_comment import ExtensionComment
+from backend.app.models.discussion_reply import DiscussionReply
 from backend.app.models.advisory_record import AdvisoryRecord
 
 
@@ -456,6 +457,21 @@ class AdminService:
         return {
             "id": diagnosis.id,
             "user_id": diagnosis.user_id,
+            "farmer_name": (
+                diagnosis.user.full_name
+                if diagnosis.user and diagnosis.user.role == "farmer"
+                else None
+            ),
+            "region": (
+                diagnosis.user.farmer_profile.region
+                if diagnosis.user and diagnosis.user.farmer_profile
+                else None
+            ),
+            "woreda": (
+                diagnosis.user.farmer_profile.woreda
+                if diagnosis.user and diagnosis.user.farmer_profile
+                else None
+            ),
             "image_filename": diagnosis.image_filename,
             "image_path": diagnosis.image_path,
             "disease_class": diagnosis.disease_class,
@@ -492,6 +508,10 @@ class AdminService:
 
         diagnoses = (
             DiagnosisRecord.query
+            .options(
+                joinedload(DiagnosisRecord.user)
+                .joinedload(User.farmer_profile)
+            )
             .order_by(
                 DiagnosisRecord.created_at.desc()
             )
@@ -519,6 +539,8 @@ class AdminService:
 
         return {
             "id": comment.id,
+            "kind": "diagnosis_comment",
+            "source_label": "Diagnosis review",
             "diagnosis_id": comment.diagnosis_id,
             "extension_agent_id": (
                 comment.extension_agent_id
@@ -541,27 +563,62 @@ class AdminService:
             ),
         }
 
+    @staticmethod
+    def discussion_reply_to_dict(reply: DiscussionReply) -> dict[str, Any]:
+        """Serialize an extension-agent reply to an agricultural discussion."""
+
+        agent = reply.extension_agent
+        post = reply.post
+
+        return {
+            "id": f"discussion-reply-{reply.id}",
+            "kind": "discussion_reply",
+            "source_label": "Discussion reply",
+            "post_id": reply.post_id,
+            "post_title": post.title if post else None,
+            "diagnosis_id": post.diagnosis_id if post else None,
+            "extension_agent_id": reply.extension_agent_id,
+            "extension_agent_name": agent.full_name if agent else None,
+            "comment": reply.content,
+            "created_at": reply.created_at.isoformat() if reply.created_at else None,
+            "updated_at": reply.updated_at.isoformat() if reply.updated_at else None,
+        }
+
     @classmethod
-    def get_all_extension_comments(
-        cls,
-    ) -> list[dict[str, Any]]:
-        """
-        Retrieve all professional extension-agent
-        comments.
-        """
+    def get_all_extension_comments(cls) -> list[dict[str, Any]]:
+        """Return diagnosis comments and discussion replies written by agents."""
 
-        comments = (
-            ExtensionComment.query
-            .order_by(
-                ExtensionComment.created_at.desc()
-            )
-            .all()
-        )
-
-        return [
+        diagnosis_comments = [
             cls.comment_to_dict(comment)
-            for comment in comments
+            for comment in ExtensionComment.query.order_by(
+                ExtensionComment.created_at.desc()
+            ).all()
         ]
+        discussion_replies = [
+            cls.discussion_reply_to_dict(reply)
+            for reply in DiscussionReply.query.options(
+                joinedload(DiscussionReply.extension_agent),
+                joinedload(DiscussionReply.post),
+            )
+            .filter(DiscussionReply.extension_agent_id.isnot(None))
+            .order_by(DiscussionReply.created_at.desc())
+            .all()
+        ]
+
+        def created_at_utc(item: dict[str, Any]) -> datetime:
+            value = item.get("created_at")
+            if not value:
+                return datetime.min.replace(tzinfo=timezone.utc)
+            timestamp = datetime.fromisoformat(value)
+            if timestamp.tzinfo is None:
+                return timestamp.replace(tzinfo=timezone.utc)
+            return timestamp.astimezone(timezone.utc)
+
+        return sorted(
+            diagnosis_comments + discussion_replies,
+            key=created_at_utc,
+            reverse=True,
+        )
 
     # =====================================================
     # DATE FILTER VALIDATION

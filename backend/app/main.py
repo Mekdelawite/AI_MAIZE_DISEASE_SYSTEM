@@ -55,6 +55,7 @@ from backend.app.routes.crop_calendar import crop_calendar_bp
 from backend.app.routes.sync import sync_bp
 from backend.app.routes.sync_batch import sync_batch_bp
 from backend.app.routes.regional_alert import regional_alert_bp
+from backend.app.services.smart_notification_scheduler import start_smart_notification_scheduler
 def create_app(
     environment: str | None = None,
 ) -> Flask:
@@ -141,6 +142,10 @@ def create_app(
     app.register_blueprint(sync_bp)
     app.register_blueprint(sync_batch_bp)
     app.register_blueprint(regional_alert_bp)
+
+    # A PostgreSQL advisory lock elects one worker across multi-worker
+    # deployments. Testing and Flask's debug reloader parent stay scheduler-free.
+    start_smart_notification_scheduler(app)
 
     # =====================================================
     # ROOT ENDPOINT

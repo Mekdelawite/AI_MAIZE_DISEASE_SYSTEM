@@ -1,5 +1,5 @@
 import { apiRequest } from './api';
-import { CropCalendarData, WeatherData } from '../types/api';
+import { CropCalendarData, FarmerWeatherForecastData, SoilWaterEstimate, WeatherData } from '../types/api';
 
 export const weatherService = {
   async getCurrentByCity(city: string, units: 'metric' | 'imperial' = 'metric'): Promise<WeatherData> {
@@ -18,10 +18,19 @@ export const weatherService = {
     return res?.weather || res;
   },
 
-  async getCropCalendar(): Promise<CropCalendarData> {
-    const res = await apiRequest<any>('/api/crop-calendar', {
+  async getFarmerForecast(): Promise<FarmerWeatherForecastData> {
+    return apiRequest<FarmerWeatherForecastData>('/api/weather/farmer/forecast', {
       method: 'GET',
     });
-    return res?.crop_calendar || res;
+  },
+
+  async getCropCalendar(): Promise<CropCalendarData> {
+    return apiRequest<CropCalendarData>('/api/crop-calendar', {
+      method: 'GET',
+    });
+  },
+
+  async getSoilWaterEstimate(): Promise<SoilWaterEstimate> {
+    return apiRequest<SoilWaterEstimate>('/api/crop-calendar/soil-water', { method: 'GET' });
   },
 };

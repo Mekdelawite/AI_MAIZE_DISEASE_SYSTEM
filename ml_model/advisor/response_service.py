@@ -285,6 +285,20 @@ class AdvisoryResponseService:
                 )
             ),
 
+            pesticide_recommendation=self._list_value(
+                advisory.get(
+                    "pesticide_recommendation",
+                    [],
+                )
+            ),
+
+            pesticide_safety=self._list_value(
+                advisory.get(
+                    "pesticide_safety",
+                    [],
+                )
+            ),
+
             sources=sources,
 
             validation=validation,

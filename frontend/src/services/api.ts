@@ -2,6 +2,7 @@ import { getApiBaseUrl } from '../utils/media';
 
 const TOKEN_STORAGE_KEY = 'maize_token';
 const LEGACY_TOKEN_STORAGE_KEY = 'maizecare_jwt_token';
+let handledUnauthorizedToken: string | null = null;
 
 export class ApiError extends Error {
   public status: number;
@@ -31,6 +32,9 @@ export function getStoredToken(): string | null {
 }
 
 export function setStoredToken(token: string | null): void {
+  if (token !== handledUnauthorizedToken) {
+    handledUnauthorizedToken = null;
+  }
   try {
     if (!token) {
       sessionStorage.removeItem(TOKEN_STORAGE_KEY);
@@ -158,7 +162,9 @@ export async function apiRequest<T = any>(endpoint: string, options: RequestOpti
     }
 
     if (response.status === 401 && !skipAuth) {
-      if (unauthorizedHandler) {
+      const requestToken = headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || null;
+      if (requestToken && requestToken === getStoredToken() && requestToken !== handledUnauthorizedToken && unauthorizedHandler) {
+        handledUnauthorizedToken = requestToken;
         unauthorizedHandler();
       }
     }

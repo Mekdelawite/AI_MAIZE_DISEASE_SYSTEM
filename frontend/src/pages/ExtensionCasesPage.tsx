@@ -1,14 +1,28 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Layers, RefreshCw, X } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowRight, MapPin, RefreshCw, UserRound } from 'lucide-react';
 import { EmptyState, ErrorState, LoadingSkeleton } from '../components/common/FeedbackStates';
 import { AppShell } from '../components/layout/AppShell';
 import { useApp } from '../context/AppContext';
 import { extensionService } from '../services/extensionService';
 import { DiagnosisHistoryItem } from '../types/api';
-import { formatConfidence, formatDateTime, resolveMediaUrl } from '../utils/media';
+import { formatConfidence, formatDateTime } from '../utils/media';
+import assignedMaizeImage from '../assets/images/extension_cases_maize.jpg';
+
+interface FarmerCaseGroup {
+  key: string;
+  farmerId?: string | number;
+  farmerName: string;
+  farmerPhone?: string;
+  region?: string;
+  woreda?: string;
+  kebele?: string;
+  diagnoses: DiagnosisHistoryItem[];
+}
 
 export const ExtensionCasesPage: React.FC = () => {
-  const { t, notify } = useApp();
+  const { t, language } = useApp();
+  const navigate = useNavigate();
 
   const [cases, setCases] = useState<DiagnosisHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,9 +34,33 @@ export const ExtensionCasesPage: React.FC = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  // Selected Case Detail
-  const [selectedCase, setSelectedCase] = useState<DiagnosisHistoryItem | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const farmerGroups = useMemo<FarmerCaseGroup[]>(() => {
+    const groups = new Map<string, FarmerCaseGroup>();
+    cases.forEach((diagnosis) => {
+      const farmerId = diagnosis.farmer_id ?? diagnosis.user_id;
+      const identity = farmerId != null
+        ? `farmer:${farmerId}`
+        : diagnosis.farmer_phone
+          ? `phone:${diagnosis.farmer_phone}`
+          : `name:${diagnosis.farmer_name || 'unknown'}|${diagnosis.region || ''}|${diagnosis.woreda || ''}`;
+      const existing = groups.get(identity);
+      if (existing) {
+        existing.diagnoses.push(diagnosis);
+        return;
+      }
+      groups.set(identity, {
+        key: identity,
+        farmerId,
+        farmerName: diagnosis.farmer_name || diagnosis.farmer_phone || 'Assigned Farmer',
+        farmerPhone: diagnosis.farmer_phone,
+        region: diagnosis.region,
+        woreda: diagnosis.woreda,
+        kebele: diagnosis.kebele,
+        diagnoses: [diagnosis],
+      });
+    });
+    return [...groups.values()];
+  }, [cases]);
 
   const loadCases = useCallback(async () => {
     setLoading(true);
@@ -46,16 +84,12 @@ export const ExtensionCasesPage: React.FC = () => {
     loadCases();
   }, [loadCases]);
 
-  const handleSelectCase = async (id: string | number) => {
-    setDetailLoading(true);
-    try {
-      const detail = await extensionService.getDiagnosisDetail(id);
-      setSelectedCase(detail);
-    } catch (err: any) {
-      notify(err?.message || 'Failed to load case detail.', 'error');
-    } finally {
-      setDetailLoading(false);
-    }
+  const handleSelectFarmer = (farmer: FarmerCaseGroup) => {
+    const farmerRouteId = farmer.farmerId ?? farmer.farmerPhone;
+    if (farmerRouteId === undefined || farmerRouteId === null) return;
+    navigate(`/extension/farmers/${encodeURIComponent(String(farmerRouteId))}`, {
+      state: { farmer },
+    });
   };
 
   return (
@@ -73,6 +107,20 @@ export const ExtensionCasesPage: React.FC = () => {
         </button>
       }
     >
+      <section
+        className="relative mb-6 overflow-hidden rounded-2xl border border-emerald-900/10 bg-emerald-950 bg-cover bg-center shadow-md"
+        style={{
+          backgroundImage: `linear-gradient(90deg, rgba(4, 30, 23, 0.86) 0%, rgba(4, 36, 27, 0.58) 55%, rgba(4, 36, 27, 0.15) 100%), url(${assignedMaizeImage})`,
+          backgroundPosition: 'center 46%',
+        }}
+      >
+        <div className="flex min-h-[180px] flex-col justify-center p-6 sm:min-h-[210px] sm:p-8">
+          <span className="text-xs font-semibold uppercase tracking-[0.15em] text-emerald-100">{language === 'am' ? 'የአካባቢዎ የእርሻ ሁኔታ' : 'Your local field activity'}</span>
+          <h2 className="mt-2 text-2xl font-bold text-white font-display sm:text-3xl">{language === 'am' ? 'የተመደቡ የአርሶ አደር ጉዳዮች' : 'Assigned Farmer Cases'}</h2>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-white/90">{language === 'am' ? 'በአካባቢዎ የተመዘገቡ የበቆሎ ቅጠል ምርመራዎችን ይመልከቱ፤ የአርሶ አደሩን ካርድ በመጫን የምርመራ ታሪኩን ይክፈቱ።' : 'Review diagnoses in your assigned area. Select a farmer card to open their diagnosis history.'}</p>
+        </div>
+      </section>
+
       {/* Filter Bar */}
       <div className="mb-6 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
         <div>
@@ -137,7 +185,7 @@ export const ExtensionCasesPage: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className={selectedCase ? 'lg:col-span-7' : 'lg:col-span-12'}>
+        <div className="lg:col-span-12">
           {loading ? (
             <LoadingSkeleton rows={5} />
           ) : error ? (
@@ -148,134 +196,43 @@ export const ExtensionCasesPage: React.FC = () => {
               description="Cases submitted by farmers within your assigned region and woreda will appear here."
             />
           ) : (
-            <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-stone-200 dark:border-stone-800 text-xs font-semibold text-stone-500 bg-stone-50/60 dark:bg-stone-900/40">
-                      <th className="py-3 px-4">ID</th>
-                      <th className="py-3 px-4">Farmer / Location</th>
-                      <th className="py-3 px-4">Disease Class</th>
-                      <th className="py-3 px-4 text-right">Confidence</th>
-                      <th className="py-3 px-4">Date</th>
-                      <th className="py-3 px-4 text-right">Inspect</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-200 dark:divide-stone-800 text-sm">
-                    {cases.map((c) => {
-                      const caseId = c.diagnosis_id ?? c.id;
-                      return (
-                        <tr
-                          key={String(caseId)}
-                          onClick={() => handleSelectCase(caseId)}
-                          className="hover:bg-stone-50/80 dark:hover:bg-stone-800/40 transition-colors cursor-pointer"
-                        >
-                          <td className="py-3 px-4 font-mono tabular-nums text-xs text-stone-500">
-                            #{caseId}
-                          </td>
-                          <td className="py-3 px-4">
-                            <p className="font-medium text-stone-900 dark:text-stone-100">
-                              {c.farmer_name || c.farmer_phone || 'Assigned Farmer'}
-                            </p>
-                            <p className="text-xs text-stone-500">
-                              {c.region || '—'} {c.woreda ? `· ${c.woreda}` : ''}
-                            </p>
-                          </td>
-                          <td className="py-3 px-4 font-semibold text-stone-900 dark:text-stone-100">
-                            {c.disease_class || c.class_name}
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono tabular-nums text-emerald-800 dark:text-emerald-400">
-                            {formatConfidence(c.confidence)}
-                          </td>
-                          <td className="py-3 px-4 text-xs font-mono tabular-nums text-stone-500">
-                            {formatDateTime(c.created_at)}
-                          </td>
-                          <td className="py-3 px-4 text-right text-xs font-semibold text-emerald-800 dark:text-emerald-400">
-                            {t('viewDetails')}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {farmerGroups.map((farmer) => {
+                const latestDiagnosis = farmer.diagnoses[0];
+                return (
+                  <button
+                    key={farmer.key}
+                    type="button"
+                    onClick={() => handleSelectFarmer(farmer)}
+                    className="w-full rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 dark:border-stone-800 dark:bg-[#121A16] dark:hover:border-emerald-800"
+                  >
+                    <span className="flex items-start gap-3">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300">
+                        <UserRound className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold text-stone-900 dark:text-stone-100">{farmer.farmerName}</span>
+                        <span className="mt-1 flex items-center gap-1 truncate text-xs text-stone-500 dark:text-stone-400"><MapPin className="h-3 w-3 shrink-0" />{[farmer.region, farmer.woreda, farmer.kebele].filter(Boolean).join(' · ') || 'Location unavailable'}</span>
+                      </span>
+                      <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" />
+                    </span>
+                    <span className="mt-4 block border-t border-stone-100 pt-3 dark:border-stone-800">
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-semibold text-stone-800 dark:text-stone-200">{farmer.diagnoses.length} {language === 'am' ? 'ምርመራዎች' : farmer.diagnoses.length === 1 ? 'diagnosis' : 'diagnoses'}</span>
+                        <span className="shrink-0 text-xs font-semibold text-emerald-800 dark:text-emerald-400">{language === 'am' ? 'ዝርዝር እይ' : 'View details'}</span>
+                      </span>
+                      <span className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-stone-500 dark:text-stone-400">
+                        <span>{formatDateTime(latestDiagnosis?.created_at)}</span>
+                        <span className="truncate">{latestDiagnosis?.disease_class || latestDiagnosis?.class_name || '—'}</span>
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* Case Detail Panel */}
-        {selectedCase && (
-          <div className="lg:col-span-5">
-            <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-6 sticky top-20 space-y-5">
-              <div className="flex items-start justify-between gap-2 border-b border-stone-200 dark:border-stone-800 pb-4">
-                <div>
-                  <span className="text-xs font-mono text-stone-500">
-                    Case #{selectedCase.diagnosis_id ?? selectedCase.id} ·{' '}
-                    {formatDateTime(selectedCase.created_at)}
-                  </span>
-                  <h3 className="mt-1 text-lg font-bold text-stone-900 dark:text-stone-100 font-display">
-                    {selectedCase.disease_class || selectedCase.class_name}
-                  </h3>
-                  <p className="text-xs text-stone-600 dark:text-stone-400">
-                    Confidence:{' '}
-                    <span className="font-mono font-semibold text-emerald-800 dark:text-emerald-400">
-                      {formatConfidence(selectedCase.confidence)}
-                    </span>
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedCase(null)}
-                  className="text-stone-400 hover:text-stone-700 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {detailLoading ? (
-                <LoadingSkeleton rows={3} />
-              ) : (
-                <div className="space-y-4">
-                  <div className="text-xs space-y-1 text-stone-600 dark:text-stone-400">
-                    <p>
-                      <span className="font-semibold text-stone-800 dark:text-stone-200">Farmer: </span>
-                      {selectedCase.farmer_name || '—'} ({selectedCase.farmer_phone || 'No phone'})
-                    </p>
-                    <p>
-                      <span className="font-semibold text-stone-800 dark:text-stone-200">Location: </span>
-                      {selectedCase.region || '—'} · {selectedCase.woreda || '—'}{' '}
-                      {selectedCase.kebele ? `· ${selectedCase.kebele}` : ''}
-                    </p>
-                  </div>
-
-                  {resolveMediaUrl(selectedCase.heatmap_url) && (
-                    <div className="rounded-lg overflow-hidden border border-stone-200 dark:border-stone-800 bg-stone-950 p-3">
-                      <div className="flex items-center gap-1.5 text-xs text-stone-300 mb-2">
-                        <Layers className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Grad-CAM Visual Explanation</span>
-                      </div>
-                      <img
-                        src={resolveMediaUrl(selectedCase.heatmap_url)!}
-                        alt="Case Grad-CAM heatmap"
-                        referrerPolicy="no-referrer"
-                        className="max-h-48 w-auto mx-auto object-contain rounded"
-                      />
-                    </div>
-                  )}
-
-                  {selectedCase.advisory?.description && (
-                    <div className="pt-3 border-t border-stone-200 dark:border-stone-800">
-                      <h4 className="text-xs font-semibold text-stone-500 mb-1">Generated Advisory</h4>
-                      <p className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed whitespace-pre-line">
-                        {selectedCase.advisory.description}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </AppShell>
   );

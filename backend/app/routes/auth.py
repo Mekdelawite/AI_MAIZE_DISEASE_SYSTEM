@@ -27,7 +27,7 @@ from __future__ import annotations
 from functools import wraps
 from typing import Any, Callable
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import (
     create_access_token,
     get_jwt,
@@ -63,6 +63,7 @@ from backend.app.services.registration_otp_service import (
     RegistrationOTPCooldownError,
     RegistrationOTPDeliveryError,
 )
+from backend.app.services.sms_service import SMSService
 
 
 
@@ -251,6 +252,43 @@ def register():
             400,
         )
 
+    # The account has already been committed by complete_registration.
+    # A confirmation SMS failure must not turn a successful registration
+    # into an API error or imply that the account was rolled back.
+    language = user.preferred_language if user.preferred_language in {"en", "am"} else "en"
+    confirmation_message = (
+        "የMaizeCare መለያዎ በተሳካ ሁኔታ ተፈጥሯል። እንኳን ደህና መጡ! አሁን ወደ መለያዎ ገብተው የበቆሎ በሽታ ምርመራና የገበሬ ምክር አገልግሎቶችን መጠቀም ይችላሉ።"
+        if language == "am"
+        else "Your MaizeCare account has been created successfully. Welcome! You can now sign in to use maize disease diagnosis and farmer advisory services."
+    )
+    sms_confirmation: dict[str, Any] = {
+        "status": "failed",
+        "sms_record_id": None,
+    }
+    try:
+        sms_result = SMSService.send_sms(
+            user.phone_number,
+            confirmation_message,
+            recipient_type="farmer",
+            notification_type="registration_confirmation",
+            language=language,
+            user_id=user.id,
+        )
+        sms_confirmation = {
+            "status": sms_result.get("status", "failed"),
+            "sms_record_id": sms_result.get("sms_record_id"),
+        }
+        if not sms_result.get("success"):
+            current_app.logger.warning(
+                "Account %s was created, but its confirmation SMS was not accepted.",
+                user.id,
+            )
+    except Exception:
+        current_app.logger.exception(
+            "Account %s was created, but sending its confirmation SMS raised an error.",
+            user.id,
+        )
+
     # Use the same JWT identity and claims as the login endpoint.
     access_token = create_access_token(
         identity=str(user.id),
@@ -264,6 +302,7 @@ def register():
     return success_response(
         {
             "message": "Registration successful.",
+            "sms_confirmation": sms_confirmation,
             "access_token": access_token,
             "token_type": "Bearer",
             "user": AuthService.user_to_dict(user),

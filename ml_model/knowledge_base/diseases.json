@@ -56,6 +56,17 @@
                     "Consider locally recommended disease-management practices when disease pressure is high."
                 ],
 
+                "pesticide_recommendation": [
+                    "Pesticide active ingredient reported in Ethiopian field research: Mancozeb (fungicide), evaluated alongside resistant maize varieties for Northern Leaf Blight. This does not establish that a mancozeb product is currently registered or the best choice for your field. Ask your woreda agricultural expert to confirm a currently registered product for maize and this disease before use."
+                ],
+
+                "pesticide_safety": [
+                    "Before use: confirm with your woreda agriculture expert that the product is currently approved for maize and this disease. Read the label for the required dose, protective equipment, re-entry interval (REI), pre-harvest interval (PHI), first aid and disposal instructions.",
+                    "During application: wear all label-required protective equipment. Keep people and animals away, avoid spraying in windy weather, and prevent spray or wash water from reaching wells, rivers or other water sources.",
+                    "After application: keep people and animals out until the label REI has passed and do not harvest until the label PHI has passed. Store the pesticide in its original labeled container, locked away from children, food and animal feed. Dispose of containers as the label directs; never reuse them.",
+                    "If exposure or poisoning is suspected: follow the label first-aid instructions immediately and contact the nearest health facility or local health professional. Take the product label or container information with you."
+                ],
+
                 "severity": "Moderate to High"
             },
 
@@ -90,6 +101,17 @@
                     "በሽታው ከፍተኛ ሲሆን በአካባቢው የተመከሩ የበሽታ አስተዳደር ዘዴዎችን መከተል።"
                 ],
 
+                "pesticide_recommendation": [
+                    "በኢትዮጵያ የመስክ ጥናት የተጠቀሰው የፀረ-ፈንገስ መድኃኒት ንጥረ ነገር፦ ማንኮዜብ (Mancozeb)፤ ከበሽታ መቋቋም ከሚችሉ የበቆሎ ዝርያዎች ጋር ለሰሜን ቅጠል በሽታ ተመርምሯል። ይህ ጥናት የማንኮዜብ ምርት አሁን በኢትዮጵያ የተመዘገበ ወይም ለእርሻዎ ምርጥ ነው ብሎ አያረጋግጥም። ከመጠቀምዎ በፊት በወረዳዎ የግብርና ባለሙያ ዘንድ ለበቆሎና ለዚህ በሽታ በአሁኑ ጊዜ የተመዘገበ ምርት መሆኑን ያረጋግጡ።"
+                ],
+
+                "pesticide_safety": [
+                    "ከመጠቀምዎ በፊት፦ ምርቱ በአሁኑ ጊዜ ለበቆሎና ለዚህ በሽታ የተፈቀደ መሆኑን ከወረዳዎ የግብርና ባለሙያ ያረጋግጡ። በመለያው ላይ ያለውን የመጠን፣ የመከላከያ መሣሪያ፣ ወደ እርሻው እንደገና የመግቢያ ጊዜ (REI)፣ ከመከር በፊት የሚጠበቅ ጊዜ (PHI)፣ የመጀመሪያ እርዳታና የአወጋገድ መመሪያ ያንብቡ።",
+                    "በሚረጩበት ጊዜ፦ በመለያው የተጠየቀውን ሁሉንም መከላከያ ይልበሱ። ሰዎችንና እንስሳትን ያርቁ፣ በነፋሻማ ሁኔታ አይርጩ፣ የመድኃኒት መርጨትና የማጠቢያ ውሃ ወደ ጉድጓድ፣ ወንዝ ወይም ሌላ የውሃ ምንጭ እንዳይገባ ይከላከሉ።",
+                    "ከረጩ በኋላ፦ በመለያው የተገለጸው REI እስኪያልፍ ሰዎችንና እንስሳትን ወደ እርሻው አያስገቡ፤ PHI እስኪያልፍ ድረስም አያጭዱ። መድኃኒቱን በዋናው መለያ ባለው ዕቃ ውስጥ፣ ከልጆች፣ ከምግብና ከእንስሳት መኖ ርቆ በተቆለፈ ቦታ ያስቀምጡ። ዕቃውን በመለያው መመሪያ መሠረት ያስወግዱ፤ እንደገና አይጠቀሙበት።",
+                    "መመረዝ ወይም መጋለጥ ከተጠረጠረ፦ ወዲያውኑ የመለያውን የመጀመሪያ እርዳታ መመሪያ ይከተሉና ወደ ቅርብ የጤና ተቋም ወይም የጤና ባለሙያ ያነጋግሩ። የመድኃኒቱን መለያ ወይም የዕቃውን መረጃ ይዘው ይሂዱ።"
+                ],
+
                 "severity": "መካከለኛ እስከ ከፍተኛ"
             },
 
@@ -101,6 +123,14 @@
                     "url": "https://doi.org/10.1002/agg2.20407",
                     "year": 2025,
                     "notes": "Ethiopia-specific evidence on maize foliar diseases."
+                },
+                {
+                    "title": "Epidemic development and management of common leaf rust and turcicum leaf blight of maize in eastern Ethiopia",
+                    "organization": "Wiley / Agrosystems, Geosciences & Environment",
+                    "source_type": "Peer-reviewed Ethiopia field research",
+                    "url": "https://acsess.onlinelibrary.wiley.com/doi/10.1002/agg2.20451",
+                    "year": 2023,
+                    "notes": "Evaluated mancozeb together with maize varieties; research results do not establish current pesticide registration."
                 }
             ],
 
@@ -154,6 +184,17 @@
                     "When necessary, follow locally approved management recommendations."
                 ],
 
+                "pesticide_recommendation": [
+                    "Pesticide active ingredient reported in Ethiopian field research: Mancozeb (fungicide), evaluated together with resistant maize varieties for Common Rust. This does not establish that a mancozeb product is currently registered or the best choice for your field. Ask your woreda agricultural expert to confirm a currently registered product for maize and this disease before use."
+                ],
+
+                "pesticide_safety": [
+                    "Before use: confirm with your woreda agriculture expert that the product is currently approved for maize and this disease. Read the label for the required dose, protective equipment, re-entry interval (REI), pre-harvest interval (PHI), first aid and disposal instructions.",
+                    "During application: wear all label-required protective equipment. Keep people and animals away, avoid spraying in windy weather, and prevent spray or wash water from reaching wells, rivers or other water sources.",
+                    "After application: keep people and animals out until the label REI has passed and do not harvest until the label PHI has passed. Store the pesticide in its original labeled container, locked away from children, food and animal feed. Dispose of containers as the label directs; never reuse them.",
+                    "If exposure or poisoning is suspected: follow the label first-aid instructions immediately and contact the nearest health facility or local health professional. Take the product label or container information with you."
+                ],
+
                 "severity": "Low to High"
             },
 
@@ -188,6 +229,17 @@
                     "አስፈላጊ ሲሆን በአካባቢው የተፈቀዱ የበሽታ አስተዳደር ምክሮችን መከተል።"
                 ],
 
+                "pesticide_recommendation": [
+                    "በኢትዮጵያ የመስክ ጥናት የተጠቀሰው የፀረ-ፈንገስ መድኃኒት ንጥረ ነገር፦ ማንኮዜብ (Mancozeb)፤ ከበሽታ መቋቋም ከሚችሉ የበቆሎ ዝርያዎች ጋር ለዝገት በሽታ ተመርምሯል። ይህ ጥናት የማንኮዜብ ምርት አሁን በኢትዮጵያ የተመዘገበ ወይም ለእርሻዎ ምርጥ ነው ብሎ አያረጋግጥም። ከመጠቀምዎ በፊት በወረዳዎ የግብርና ባለሙያ ዘንድ ለበቆሎና ለዚህ በሽታ በአሁኑ ጊዜ የተመዘገበ ምርት መሆኑን ያረጋግጡ።"
+                ],
+
+                "pesticide_safety": [
+                    "ከመጠቀምዎ በፊት፦ ምርቱ በአሁኑ ጊዜ ለበቆሎና ለዚህ በሽታ የተፈቀደ መሆኑን ከወረዳዎ የግብርና ባለሙያ ያረጋግጡ። በመለያው ላይ ያለውን የመጠን፣ የመከላከያ መሣሪያ፣ ወደ እርሻው እንደገና የመግቢያ ጊዜ (REI)፣ ከመከር በፊት የሚጠበቅ ጊዜ (PHI)፣ የመጀመሪያ እርዳታና የአወጋገድ መመሪያ ያንብቡ።",
+                    "በሚረጩበት ጊዜ፦ በመለያው የተጠየቀውን ሁሉንም መከላከያ ይልበሱ። ሰዎችንና እንስሳትን ያርቁ፣ በነፋሻማ ሁኔታ አይርጩ፣ የመድኃኒት መርጨትና የማጠቢያ ውሃ ወደ ጉድጓድ፣ ወንዝ ወይም ሌላ የውሃ ምንጭ እንዳይገባ ይከላከሉ።",
+                    "ከረጩ በኋላ፦ በመለያው የተገለጸው REI እስኪያልፍ ሰዎችንና እንስሳትን ወደ እርሻው አያስገቡ፤ PHI እስኪያልፍ ድረስም አያጭዱ። መድኃኒቱን በዋናው መለያ ባለው ዕቃ ውስጥ፣ ከልጆች፣ ከምግብና ከእንስሳት መኖ ርቆ በተቆለፈ ቦታ ያስቀምጡ። ዕቃውን በመለያው መመሪያ መሠረት ያስወግዱ፤ እንደገና አይጠቀሙበት።",
+                    "መመረዝ ወይም መጋለጥ ከተጠረጠረ፦ ወዲያውኑ የመለያውን የመጀመሪያ እርዳታ መመሪያ ይከተሉና ወደ ቅርብ የጤና ተቋም ወይም የጤና ባለሙያ ያነጋግሩ። የመድኃኒቱን መለያ ወይም የዕቃውን መረጃ ይዘው ይሂዱ።"
+                ],
+
                 "severity": "ዝቅተኛ እስከ ከፍተኛ"
             },
 
@@ -199,6 +251,14 @@
                     "url": "https://ipm.mgcafe.uky.edu/content/common-rust-corn",
                     "year": null,
                     "notes": "Disease identification and favorable environmental conditions."
+                },
+                {
+                    "title": "Epidemic development and management of common leaf rust and turcicum leaf blight of maize in eastern Ethiopia",
+                    "organization": "Wiley / Agrosystems, Geosciences & Environment",
+                    "source_type": "Peer-reviewed Ethiopia field research",
+                    "url": "https://acsess.onlinelibrary.wiley.com/doi/10.1002/agg2.20451",
+                    "year": 2023,
+                    "notes": "Evaluated mancozeb together with maize varieties; research results do not establish current pesticide registration."
                 }
             ],
 
@@ -253,6 +313,17 @@
                     "Follow locally recommended management practices when disease pressure is high."
                 ],
 
+                "pesticide_recommendation": [
+                    "Pesticide active ingredients reported in Ethiopian field studies for Gray Leaf Spot: Mancozeb and Propiconazole (fungicides; propiconazole was evaluated in a separate Bako field study). Research does not establish that either product is currently registered or best for your field. Ask your woreda agricultural expert to confirm a currently registered product for maize and this disease before use."
+                ],
+
+                "pesticide_safety": [
+                    "Before use: confirm with your woreda agriculture expert that the product is currently approved for maize and this disease. Read the label for the required dose, protective equipment, re-entry interval (REI), pre-harvest interval (PHI), first aid and disposal instructions.",
+                    "During application: wear all label-required protective equipment. Keep people and animals away, avoid spraying in windy weather, and prevent spray or wash water from reaching wells, rivers or other water sources.",
+                    "After application: keep people and animals out until the label REI has passed and do not harvest until the label PHI has passed. Store the pesticide in its original labeled container, locked away from children, food and animal feed. Dispose of containers as the label directs; never reuse them.",
+                    "If exposure or poisoning is suspected: follow the label first-aid instructions immediately and contact the nearest health facility or local health professional. Take the product label or container information with you."
+                ],
+
                 "severity": "Moderate to High"
             },
 
@@ -288,6 +359,17 @@
                     "የበሽታው ጫና ከፍተኛ ሲሆን በአካባቢው የተመከሩ የአስተዳደር ዘዴዎችን መከተል።"
                 ],
 
+                "pesticide_recommendation": [
+                    "በኢትዮጵያ የመስክ ጥናቶች ለግራጫ ቅጠል ነጠብጣብ በሽታ የተጠቀሱ የፀረ-ፈንገስ መድኃኒት ንጥረ ነገሮች፦ ማንኮዜብ (Mancozeb) እና ፕሮፒኮናዞል (Propiconazole)፤ ፕሮፒኮናዞል በተለየ የባኮ የመስክ ጥናት ተመርምሯል። ጥናቶቹ ከሁለቱም መካከል ማንኛውም ምርት አሁን የተመዘገበ ወይም ለእርሻዎ ምርጥ መሆኑን አያረጋግጡም። ከመጠቀምዎ በፊት በወረዳዎ የግብርና ባለሙያ ዘንድ ለበቆሎና ለዚህ በሽታ በአሁኑ ጊዜ የተመዘገበ ምርት መሆኑን ያረጋግጡ።"
+                ],
+
+                "pesticide_safety": [
+                    "ከመጠቀምዎ በፊት፦ ምርቱ በአሁኑ ጊዜ ለበቆሎና ለዚህ በሽታ የተፈቀደ መሆኑን ከወረዳዎ የግብርና ባለሙያ ያረጋግጡ። በመለያው ላይ ያለውን የመጠን፣ የመከላከያ መሣሪያ፣ ወደ እርሻው እንደገና የመግቢያ ጊዜ (REI)፣ ከመከር በፊት የሚጠበቅ ጊዜ (PHI)፣ የመጀመሪያ እርዳታና የአወጋገድ መመሪያ ያንብቡ።",
+                    "በሚረጩበት ጊዜ፦ በመለያው የተጠየቀውን ሁሉንም መከላከያ ይልበሱ። ሰዎችንና እንስሳትን ያርቁ፣ በነፋሻማ ሁኔታ አይርጩ፣ የመድኃኒት መርጨትና የማጠቢያ ውሃ ወደ ጉድጓድ፣ ወንዝ ወይም ሌላ የውሃ ምንጭ እንዳይገባ ይከላከሉ።",
+                    "ከረጩ በኋላ፦ በመለያው የተገለጸው REI እስኪያልፍ ሰዎችንና እንስሳትን ወደ እርሻው አያስገቡ፤ PHI እስኪያልፍ ድረስም አያጭዱ። መድኃኒቱን በዋናው መለያ ባለው ዕቃ ውስጥ፣ ከልጆች፣ ከምግብና ከእንስሳት መኖ ርቆ በተቆለፈ ቦታ ያስቀምጡ። ዕቃውን በመለያው መመሪያ መሠረት ያስወግዱ፤ እንደገና አይጠቀሙበት።",
+                    "መመረዝ ወይም መጋለጥ ከተጠረጠረ፦ ወዲያውኑ የመለያውን የመጀመሪያ እርዳታ መመሪያ ይከተሉና ወደ ቅርብ የጤና ተቋም ወይም የጤና ባለሙያ ያነጋግሩ። የመድኃኒቱን መለያ ወይም የዕቃውን መረጃ ይዘው ይሂዱ።"
+                ],
+
                 "severity": "መካከለኛ እስከ ከፍተኛ"
             },
 
@@ -307,6 +389,22 @@
                     "url": "https://journals.ju.edu.et/index.php/ejast/article/view/889",
                     "year": null,
                     "notes": "Ethiopia-specific disease management research."
+                },
+                {
+                    "title": "Effect of Foliar Fungicide, Tillage and Variety on Maize Gray Leaf Spot at Bako, Ethiopia",
+                    "organization": "Ethiopian Journal of Applied Science and Technology",
+                    "source_type": "Peer-reviewed Ethiopia field research",
+                    "url": "https://ejhs.ju.edu.et/index.php/ejast/article/view/889",
+                    "year": 2013,
+                    "notes": "Evaluated mancozeb as part of integrated disease management; research results do not establish current pesticide registration."
+                },
+                {
+                    "title": "Controlling of Maize Grey Leaf Spot by Interacting Host Resistance and Fungicide Spray Frequency at Bako, Ethiopia",
+                    "organization": "Al-Qadisiyah Journal for Agriculture Sciences",
+                    "source_type": "Peer-reviewed Ethiopia field research",
+                    "url": "https://doi.org/10.33794/qjas.2023.142137.1135",
+                    "year": 2023,
+                    "notes": "Evaluated propiconazole (Tilt 250 EC) spray frequencies with maize varieties; does not establish current pesticide registration."
                 }
             ],
 
@@ -358,6 +456,14 @@
                     "If new symptoms appear, submit a new image for diagnosis."
                 ],
 
+                "pesticide_recommendation": [
+                    "No pesticide is recommended from a Healthy classification alone. Continue monitoring and seek expert advice if symptoms appear."
+                ],
+
+                "pesticide_safety": [
+                    "Do not use pesticides for a Healthy classification alone."
+                ],
+
                 "severity": "Healthy"
             },
 
@@ -388,6 +494,14 @@
                     "ጤናማ ተብሎ በተመደበ ምስል ላይ ብቻ የበሽታ ሕክምና አያስፈልግም።",
                     "መደበኛ ክትትልን መቀጠል።",
                     "አዲስ ምልክቶች ከታዩ አዲስ ምስል በመላክ እንደገና ምርመራ ማድረግ።"
+                ],
+
+                "pesticide_recommendation": [
+                    "በጤናማ ተብሎ በተመደበ ምስል ላይ ብቻ የጸረ-ተባይ መድኃኒት አይመከርም። ክትትልን ይቀጥሉ፤ ምልክቶች ከታዩ የግብርና ባለሙያን ያማክሩ።"
+                ],
+
+                "pesticide_safety": [
+                    "ጤናማ ተብሎ በተመደበ ውጤት ላይ ብቻ የጸረ-ተባይ መድኃኒት አይጠቀሙ።"
                 ],
 
                 "severity": "ጤናማ"

@@ -83,12 +83,35 @@ export const AppShell: React.FC<{
       ? extensionNav
       : farmerNav;
 
-  const roleLabel =
-    effectiveRole === 'admin'
+  const roleLabel = language === 'am'
+    ? effectiveRole === 'admin'
+      ? 'አስተዳዳሪ'
+      : effectiveRole === 'extension_agent'
+      ? 'የግብርና ኤክስቴንሽን ባለሙያ'
+      : 'አርሶ አደር'
+    : effectiveRole === 'admin'
       ? 'Administrator'
       : effectiveRole === 'extension_agent'
       ? 'Extension Agent'
       : 'Smallholder Farmer';
+
+  const localizedTitles: Record<string, string> = {
+    'Diagnosis Result': 'የምርመራ ውጤት',
+    'Maize Leaf Diagnosis Result': 'የበቆሎ ቅጠል ምርመራ ውጤት',
+    'Geo-Disease Map': 'የበሽታ ጂኦ ካርታ',
+    'SMS Notification Dispatch': 'የSMS ማሳወቂያ መላኪያ',
+    'Send Regional Alert': 'የክልል ማንቂያ ላክ',
+  };
+  const localizedSubtitles: Record<string, string> = {
+    'Review AI classification, Grad-CAM explainability, and advisory.': 'የAI ምደባን፣ የGrad-CAM ማብራሪያን እና የግብርና ምክርን ይመልከቱ።',
+    'MobileNetV2 classification output, Grad-CAM visual attention heatmap, and server-generated agronomic advisory.': 'የMobileNetV2 ምደባ ውጤትን፣ የGrad-CAM ምስላዊ ማብራሪያን እና ከሰርቨር የተዘጋጀ የግብርና ምክርን ይመልከቱ።',
+    'Detailed view of historical maize leaf classification, Grad-CAM explainability, and saved advisory.': 'የቀድሞ የበቆሎ ቅጠል ምርመራን፣ የGrad-CAM ማብራሪያን እና የተቀመጠ ምክርን በዝርዝር ይመልከቱ።',
+    'Manage your personal information, regional woreda assignment, GPS coordinates for local weather, and SMS alert preferences.': 'የግል መረጃዎን፣ ክልልና ወረዳዎን፣ ለአካባቢያዊ የአየር ሁኔታ የGPS መጋጠሚያዎችን እና የSMS ማንቂያ ምርጫዎችን ያስተዳድሩ።',
+  };
+  const pageTitle = language === 'am'
+    ? localizedTitles[title] || title.replace(/^Diagnosis Record/, 'የምርመራ መዝገብ')
+    : title;
+  const pageSubtitle = language === 'am' && subtitle ? localizedSubtitles[subtitle] || subtitle : subtitle;
 
   const handleLogout = () => {
     logout();
@@ -111,7 +134,7 @@ export const AppShell: React.FC<{
 
         <div className="px-6 py-3.5 border-b border-stone-200/70 dark:border-stone-800/70 text-xs text-stone-600 dark:text-stone-400">
           <div className="font-medium text-stone-900 dark:text-stone-100 truncate">
-            {user?.full_name || user?.name || user?.phone_number || 'Authenticated Workspace'}
+            {user?.full_name || user?.name || user?.phone_number || (language === 'am' ? 'የተረጋገጠ የስራ ቦታ' : 'Authenticated Workspace')}
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-stone-500 dark:text-stone-400">
             <span>{roleLabel}</span>
@@ -223,7 +246,7 @@ export const AppShell: React.FC<{
             <div className="flex items-center gap-2 text-xs text-stone-500 dark:text-stone-400 truncate">
               <span className="font-medium text-stone-700 dark:text-stone-300">{roleLabel}</span>
               <span aria-hidden="true">/</span>
-              <span className="text-stone-900 dark:text-stone-100 font-semibold truncate">{title}</span>
+              <span className="text-stone-900 dark:text-stone-100 font-semibold truncate">{pageTitle}</span>
             </div>
           </div>
 
@@ -340,11 +363,11 @@ export const AppShell: React.FC<{
           <div className="mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100 font-display">
-                {title}
+                {pageTitle}
               </h1>
               {subtitle && (
                 <p className="mt-1.5 text-sm text-stone-600 dark:text-stone-400 max-w-3xl leading-relaxed">
-                  {subtitle}
+                  {pageSubtitle}
                 </p>
               )}
             </div>

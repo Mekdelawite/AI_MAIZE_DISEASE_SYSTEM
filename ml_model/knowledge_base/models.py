@@ -15,7 +15,7 @@ Project: AI Maize Disease Detection System
 =========================================================
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Any
 
 
@@ -38,6 +38,10 @@ class LocalizedContent:
     management: List[str]
 
     severity: str
+
+    pesticide_recommendation: List[str] = field(default_factory=list)
+
+    pesticide_safety: List[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -200,5 +204,13 @@ class DiseaseRecord:
 
             "severity": (
                 content.severity
+            ),
+
+            "pesticide_recommendation": (
+                content.pesticide_recommendation or []
+            ),
+
+            "pesticide_safety": (
+                content.pesticide_safety or []
             ),
         }

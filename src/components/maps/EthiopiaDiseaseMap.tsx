@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 
 export interface GeoDiagnosis {
   diagnosis_id?: number | string;
@@ -16,6 +18,9 @@ interface Props {
   cases: GeoDiagnosis[];
   selectedRegion: string;
   onSelectRegion: (region: string) => void;
+  mapHeight?: number;
+  compact?: boolean;
+  focusEthiopia?: boolean;
 }
 
 declare global {
@@ -71,7 +76,7 @@ function loadGoogleMaps(apiKey: string): Promise<any> {
   return window.__ethiopiaGoogleMapsPromise;
 }
 
-export const EthiopiaDiseaseMap: React.FC<Props> = ({ cases }) => {
+export const EthiopiaDiseaseMap: React.FC<Props> = ({ cases, mapHeight = 480, compact = false, focusEthiopia = false }) => {
   const mapElement = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const mapsLibraryRef = useRef<any>(null);
@@ -96,6 +101,8 @@ export const EthiopiaDiseaseMap: React.FC<Props> = ({ cases }) => {
     });
   }, [cases]);
 
+  const useLeafletFallback = !apiKey && compact && focusEthiopia;
+
   useEffect(() => {
     if (!apiKey) {
       setMapError(null);
@@ -114,9 +121,10 @@ export const EthiopiaDiseaseMap: React.FC<Props> = ({ cases }) => {
         maxZoom: 18,
         mapTypeId: 'roadmap',
         streetViewControl: false,
-        mapTypeControl: true,
-        fullscreenControl: true,
+        mapTypeControl: !compact,
+        fullscreenControl: !compact,
         clickableIcons: false,
+        ...(focusEthiopia ? { restriction: { latLngBounds: { north: 15, south: 3, east: 48, west: 33 }, strictBounds: true } } : {}),
       });
       infoWindow.current = new maps.InfoWindow();
       setMapReady(true);
@@ -169,12 +177,55 @@ export const EthiopiaDiseaseMap: React.FC<Props> = ({ cases }) => {
     });
   }, [mapReady, pointGroups]);
 
+  if (useLeafletFallback) {
+    return (
+      <MapContainer
+        center={[9.145, 40.4897]}
+        zoom={5}
+        minZoom={4}
+        maxZoom={12}
+        maxBounds={[[3, 33], [15, 48]]}
+        maxBoundsViscosity={1}
+        scrollWheelZoom
+        style={{ height: `${mapHeight}px`, width: '100%' }}
+        className="overflow-hidden rounded-xl border border-stone-200 dark:border-stone-800"
+      >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        {pointGroups.map((group) => (
+          <CircleMarker
+            key={group.key}
+            center={[group.position.lat, group.position.lng]}
+            radius={Math.min(13, 7 + Math.log2(group.items.length))}
+            pathOptions={{
+              color: '#ffffff',
+              weight: 2,
+              fillColor: group.level === 'outbreak' ? '#dc2626' : group.level === 'moderate' ? '#eab308' : '#16a34a',
+              fillOpacity: 0.9,
+            }}
+          >
+            <Popup>
+              <strong>{group.items.length} diagnosis(es)</strong>
+              {group.items.slice(0, 4).map((item, index) => (
+                <div key={`${item.diagnosis_id ?? item.id ?? 'case'}-${index}`} className="mt-1 border-t border-stone-200 pt-1">
+                  {item.disease_class || 'Unknown disease'}{item.region ? ` · ${item.region}` : ''}
+                </div>
+              ))}
+            </Popup>
+          </CircleMarker>
+        ))}
+      </MapContainer>
+    );
+  }
+
   return (
     <div className="space-y-2">
-      <div ref={mapElement} className="h-[480px] w-full overflow-hidden rounded-xl border border-stone-200 bg-stone-100 dark:border-stone-800" role="application" aria-label="Google Map of Ethiopia with maize disease diagnosis hotspots" />
+      <div ref={mapElement} style={{ height: `${mapHeight}px` }} className="w-full overflow-hidden rounded-xl border border-stone-200 bg-stone-100 dark:border-stone-800" role="application" aria-label="Google Map of Ethiopia with maize disease diagnosis hotspots" />
       {!apiKey && <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200" role="status">Google Maps API key is not configured. Set <code>VITE_GOOGLE_MAPS_API_KEY</code> in the frontend .env file, enable Maps JavaScript API for that key, then restart Vite.</p>}
       {mapError && <p className="rounded-lg bg-red-50 p-3 text-xs text-red-800 dark:bg-red-950/40 dark:text-red-200" role="alert">{mapError}</p>}
-      <p className="text-[11px] text-stone-500">Google Maps - Ethiopia. Hotspots group diagnoses at the same GPS point. Select a region above to filter regional records.</p>
+      {!compact && <p className="text-[11px] text-stone-500">Google Maps - Ethiopia. Hotspots group diagnoses at the same GPS point. Select a region above to filter regional records.</p>}
     </div>
   );
 };

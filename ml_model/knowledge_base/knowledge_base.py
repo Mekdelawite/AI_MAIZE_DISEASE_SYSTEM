@@ -217,6 +217,16 @@ class KnowledgeBase:
                 "severity",
                 "",
             ),
+
+            pesticide_recommendation=data.get(
+                "pesticide_recommendation",
+                [],
+            ),
+
+            pesticide_safety=data.get(
+                "pesticide_safety",
+                [],
+            ),
         )
 
     @staticmethod
@@ -691,6 +701,14 @@ class KnowledgeBase:
 
             "management": information[
                 "management"
+            ],
+
+            "pesticide_recommendation": information[
+                "pesticide_recommendation"
+            ],
+
+            "pesticide_safety": information[
+                "pesticide_safety"
             ],
 
             "severity": information[

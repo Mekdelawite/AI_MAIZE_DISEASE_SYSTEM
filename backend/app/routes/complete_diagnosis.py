@@ -40,6 +40,8 @@ from flask_jwt_extended import (
     jwt_required,
 )
 
+from ml_model.inference.exceptions import InvalidImageError
+
 from backend.app.services.diagnosis_advisory_service import (
     DiagnosisAdvisoryError,
     DiagnosisAdvisoryIntegrationService,
@@ -118,6 +120,18 @@ def _allowed_file(filename: str) -> bool:
     suffix = Path(filename).suffix.lower()
 
     return suffix in ALLOWED_EXTENSIONS
+
+
+def _find_invalid_image_error(error: BaseException) -> InvalidImageError | None:
+    current_error: BaseException | None = error
+
+    while current_error is not None:
+        if isinstance(current_error, InvalidImageError):
+            return current_error
+
+        current_error = current_error.__cause__ or current_error.__context__
+
+    return None
 
 
 # =========================================================
@@ -411,6 +425,18 @@ def complete_diagnosis():
             str(error),
         )
 
+        invalid_image_error = _find_invalid_image_error(error)
+        if invalid_image_error is not None:
+            return jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_IMAGE",
+                        "message": str(invalid_image_error),
+                    },
+                }
+            ), 422
+
         return jsonify(
             {
                 "success": False,
@@ -467,4 +493,3 @@ def complete_diagnosis():
         except Exception:
 
             pass
-

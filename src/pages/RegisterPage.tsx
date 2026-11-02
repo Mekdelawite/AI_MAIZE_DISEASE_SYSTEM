@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AlertCircle, CheckCircle2, Eye, EyeOff, MapPin } from 'lucide-react';
 import { PublicLayout } from '../components/layout/PublicLayout';
 import { useApp } from '../context/AppContext';
 import { authService } from '../services/authService';
+import { locationService } from '../services/locationService';
 
 const ETHIOPIAN_REGIONS = [
   'Oromia',
   'Amhara',
-  'SNNPR',
+  'Central Ethiopia',
+  'South Ethiopia',
   'Sidama',
   'South West Ethiopia',
   'Tigray',
@@ -31,11 +33,37 @@ export const RegisterPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [region, setRegion] = useState('Oromia');
   const [woreda, setWoreda] = useState('');
+  const [woredaOptions, setWoredaOptions] = useState<string[]>([]);
+  const [woredaLoading, setWoredaLoading] = useState(false);
+  const [woredaError, setWoredaError] = useState('');
+  const [woredaReload, setWoredaReload] = useState(0);
+  const woredaRequestRef = useRef(0);
   const [kebele, setKebele] = useState('');
   const [preferredLanguage, setPreferredLanguage] = useState<'en' | 'am'>(language);
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [smsOptIn, setSmsOptIn] = useState(true);
+
+  const loadWoredaOptions = async (selectedRegion: string) => {
+    const requestId = ++woredaRequestRef.current;
+    setWoreda('');
+    setWoredaOptions([]);
+    setWoredaError('');
+    setWoredaLoading(true);
+    try {
+      const options = await locationService.getWoredasForRegion(selectedRegion);
+      if (requestId === woredaRequestRef.current) setWoredaOptions(options);
+    } catch (err: any) {
+      if (requestId === woredaRequestRef.current) setWoredaError(err?.message || 'Could not load Woredas for this region.');
+    } finally {
+      if (requestId === woredaRequestRef.current) setWoredaLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadWoredaOptions(region);
+    return () => { woredaRequestRef.current += 1; };
+  }, [woredaReload]);
 
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -231,7 +259,11 @@ export const RegisterPage: React.FC = () => {
                 <select
                   id="reg-region"
                   value={region}
-                  onChange={(e) => setRegion(e.target.value)}
+                  onChange={(e) => {
+                    const selectedRegion = e.target.value;
+                    setRegion(selectedRegion);
+                    void loadWoredaOptions(selectedRegion);
+                  }}
                   className="w-full px-3 py-2 text-sm rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
                 >
                   {ETHIOPIAN_REGIONS.map((r) => (
@@ -246,15 +278,23 @@ export const RegisterPage: React.FC = () => {
                 <label htmlFor="reg-woreda" className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1.5">
                   {t('woredaLabel')} *
                 </label>
-                <input
+                <select
                   id="reg-woreda"
-                  type="text"
                   required
                   value={woreda}
                   onChange={(e) => setWoreda(e.target.value)}
-                  placeholder="e.g. Bako Tibe"
+                  disabled={loading || woredaLoading || woredaOptions.length === 0}
                   className="w-full px-3 py-2 text-sm rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
-                />
+                >
+                  <option value="">{woredaLoading ? `Loading ${region} Woredas…` : `Select a Woreda in ${region}`}</option>
+                  {woredaOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+                {!woredaLoading && !woredaError && <p className="mt-1 text-[11px] text-stone-500" aria-live="polite">{woredaOptions.length} Woredas available in {region}.</p>}
+                <p className="mt-1 text-[11px] text-stone-500">Woreda names: Open Admin Data, CC BY 4.0.</p>
+                {woredaError && <div className="mt-1 flex items-center gap-2 text-xs text-red-700 dark:text-red-300" role="alert">
+                  <span>{woredaError}</span>
+                  <button type="button" onClick={() => setWoredaReload((n) => n + 1)} className="font-semibold underline">Retry</button>
+                </div>}
               </div>
 
               <div>

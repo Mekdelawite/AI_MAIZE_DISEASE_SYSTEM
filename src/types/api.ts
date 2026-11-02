@@ -56,15 +56,28 @@ export interface AdvisoryRecord {
   id?: number | string;
   advisory_id?: number | string;
   disease_class?: string;
+  disease?: string;
+  scientific_name?: string | null;
+  confidence?: number | null;
+  severity?: string;
+  symptoms?: string[];
+  causes?: string[];
+  favorable_conditions?: string[];
+  management?: string[];
   title?: string;
   heading?: string;
   description?: string;
   treatment?: string | string[];
+  pesticide_recommendation?: string[];
+  pesticide_safety?: string[];
   treatments?: string[];
   prevention?: string | string[];
   preventions?: string[];
   recommendations?: string | string[];
   source?: string;
+  sources?: Array<{ title?: string; organization?: string; source_type?: string; url?: string; year?: number | string; notes?: string }>;
+  validation?: Record<string, unknown>;
+  disclaimer?: string;
   language?: 'en' | 'am';
   created_at?: string;
 }

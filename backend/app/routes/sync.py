@@ -35,7 +35,7 @@ import uuid
 
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from flask_jwt_extended import (
     get_jwt_identity,
@@ -482,9 +482,10 @@ def synchronize():
 
     except Exception as error:
 
-        print(
-            "Offline synchronization unexpected error:",
-            repr(error),
+        current_app.logger.exception(
+            "Offline synchronization failed for user_id=%s operation_id=%s",
+            user_id,
+            operation_id,
         )
 
         return jsonify(
