@@ -1,8 +1,11 @@
 from flask_jwt_extended import create_access_token
 from datetime import datetime, timezone
+import requests
+import pytest
 
 from backend.app.models.farmer_profile import FarmerProfile
 from backend.app.models.user import User
+from backend.app.services import weather_service
 from backend.app.services.weather_service import WeatherService
 
 
@@ -119,3 +122,23 @@ def test_current_weather_keeps_timestamp_and_rainfall_window_when_available():
     assert weather["rainfall_period_hours"] == 3
     without_rain = WeatherService._format_weather_response({})
     assert "rainfall_mm" not in without_rain
+
+
+def test_weather_provider_timeout_is_retried_once_then_temporarily_suppressed(monkeypatch):
+    calls = []
+
+    def timeout(*args, **kwargs):
+        calls.append(kwargs)
+        raise requests.Timeout("provider timed out")
+
+    monkeypatch.setattr(weather_service, "_RESPONSE_CACHE", {})
+    monkeypatch.setattr(weather_service, "_UNAVAILABLE_UNTIL", {})
+    monkeypatch.setattr(weather_service.requests, "get", timeout)
+
+    with pytest.raises(requests.RequestException):
+        WeatherService._get_json("test-provider", "https://weather.invalid", {"lat": 1}, cache_seconds=10)
+    with pytest.raises(requests.RequestException, match="temporarily unavailable"):
+        WeatherService._get_json("test-provider", "https://weather.invalid", {"lat": 2}, cache_seconds=10)
+
+    assert len(calls) == 2
+    assert all(call["timeout"] == (2, 3) for call in calls)

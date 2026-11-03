@@ -364,6 +364,13 @@ def request_registration_otp():
             503,
         )
 
+    except UserAlreadyExistsError as exc:
+        return error_response(
+            "USER_ALREADY_EXISTS",
+            str(exc),
+            409,
+        )
+
     except RegistrationOTPValidationError as exc:
         return error_response(
             "VALIDATION_ERROR",

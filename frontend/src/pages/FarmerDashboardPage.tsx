@@ -5,7 +5,6 @@ import {
   Calendar,
   CloudSun,
   History,
-  BellRing,
   MapPin,
   MessageSquare,
   RefreshCw,
@@ -21,7 +20,6 @@ import { useAuth } from '../context/AuthContext';
 import { diagnosisService } from '../services/diagnosisService';
 import { discussionService } from '../services/discussionService';
 import { profileService } from '../services/profileService';
-import { notificationService, FarmerNotification } from '../services/notificationService';
 import { syncService } from '../services/syncService';
 import { weatherService } from '../services/weatherService';
 import maizeBanner from '../assets/images/farmer_dashboard_maize_banner.jpg';
@@ -54,7 +52,6 @@ export const FarmerDashboardPage: React.FC = () => {
   const [calendar, setCalendar] = useState<CropCalendarData | null>(null);
   const [posts, setPosts] = useState<DiscussionPost[]>([]);
   const [offlineQueue, setOfflineQueue] = useState<QueuedSyncItem[]>([]);
-  const [regionalAlerts, setRegionalAlerts] = useState<FarmerNotification[]>([]);
 
   const loadDashboardData = useCallback(async () => {
     setHistoryLoading(true);
@@ -97,7 +94,6 @@ export const FarmerDashboardPage: React.FC = () => {
       .getPosts({ page: 1, per_page: 3 })
       .then((res) => setPosts(res.posts.slice(0, 3)))
       .catch(() => {});
-    notificationService.getFarmerNotifications().then(setRegionalAlerts).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -147,10 +143,6 @@ export const FarmerDashboardPage: React.FC = () => {
         </Link>
       }
     >
-      {regionalAlerts.length > 0 && <section className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-5 dark:border-amber-900 dark:bg-amber-950/30">
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-amber-950 dark:text-amber-100"><BellRing className="h-4 w-4" />Regional alerts</h2>
-        <ul className="space-y-3">{regionalAlerts.slice(0, 5).map((alert) => <li key={alert.id} className="border-t border-amber-200 pt-3 first:border-0 first:pt-0 dark:border-amber-900"><p className="text-xs font-semibold text-amber-950 dark:text-amber-100">{alert.title}</p><p className="mt-1 whitespace-pre-line text-sm text-stone-800 dark:text-stone-200">{alert.message}</p><Link to="/farmer/discussion" className="mt-1 inline-block text-xs font-semibold text-emerald-800 underline dark:text-emerald-300">View community post</Link></li>)}</ul>
-      </section>}
       <section
         className="relative mb-7 overflow-hidden rounded-2xl bg-emerald-950 bg-cover bg-center shadow-lg"
         style={{

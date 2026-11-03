@@ -13,7 +13,7 @@ from flask import current_app
 
 from backend.app.extensions import db
 from backend.app.models.pending_registration import PendingRegistration
-from backend.app.services.auth_service import AuthService
+from backend.app.services.auth_service import AuthService, UserAlreadyExistsError
 from backend.app.services.sms_service import SMSService
 
 
@@ -110,7 +110,7 @@ class RegistrationOTPService:
         ).first()
 
         if existing_user:
-            raise RegistrationOTPValidationError(
+            raise UserAlreadyExistsError(
                 "An account already exists for this phone number. Please log in."
             )
 
@@ -339,7 +339,7 @@ class RegistrationOTPService:
         ).first()
 
         if existing_user:
-            raise RegistrationOTPValidationError(
+            raise UserAlreadyExistsError(
                 "An account already exists for this phone number. Please log in."
             )
 

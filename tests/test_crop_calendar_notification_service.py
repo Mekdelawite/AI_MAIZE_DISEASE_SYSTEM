@@ -105,8 +105,9 @@ def test_forecast_and_soil_water_advisories_are_idempotent_and_bilingual(monkeyp
     sms = []
     monkeypatch.setattr(notifications.SMSService, "send_sms", lambda *args, **kwargs: sms.append(args))
 
-    result = CropCalendarNotificationService.process_farmer(user, profile, today=today)
-    repeated = CropCalendarNotificationService.process_farmer(user, profile, today=today)
+    with Flask(__name__).app_context():
+        result = CropCalendarNotificationService.process_farmer(user, profile, today=today)
+        repeated = CropCalendarNotificationService.process_farmer(user, profile, today=today)
 
     assert result["weather_alert"] == 1
     assert result["soil_water_alert"] == 1  # no missing-input prompt for complete profile
@@ -152,6 +153,29 @@ def test_newly_available_root_zone_estimate_creates_labeled_notification(monkeyp
     assert "የሴንሰር መለኪያ አይደለም" in row["message"][1]
 
 
+def test_missing_live_weather_creates_bilingual_fallback_guidance(monkeypatch):
+    saved = _persist_fake(monkeypatch)
+    _patch_weather_and_advisories(monkeypatch, [])
+
+    def unavailable(*args, **kwargs):
+        raise TimeoutError("weather provider unavailable")
+
+    monkeypatch.setattr(notifications.WeatherService, "get_current_weather_by_coordinates", unavailable)
+    today = date(2026, 5, 15)
+    user, profile = _user(language="am"), _profile(planting_date=today - timedelta(days=10))
+
+    with Flask(__name__).app_context():
+        result = CropCalendarNotificationService.process_farmer(user, profile, today=today)
+        repeated = CropCalendarNotificationService.process_farmer(user, profile, today=today)
+
+    assert result["agricultural_advisory"] == 1
+    assert repeated["agricultural_advisory"] == 0
+    row = next(iter(saved.values()))
+    assert row["title"][0] == "Live weather update unavailable"
+    assert "no live measurements" in row["message"][0]
+    assert row["title"][1] and row["message"][1]
+
+
 def test_missing_location_still_notifies_of_missing_inputs_without_weather_calls(monkeypatch):
     saved = _persist_fake(monkeypatch)
     profile = _profile(planting_date=None, coordinates=False)
@@ -170,6 +194,19 @@ def test_scheduler_is_disabled_for_tests(monkeypatch):
     app = Flask(__name__)
     app.config.update(TESTING=True, SMART_NOTIFICATIONS_ENABLED=True)
     starts = []
+    monkeypatch.setattr(scheduler.threading.Thread, "start", lambda self: starts.append(self))
+
+    start_smart_notification_scheduler(app)
+
+    assert starts == []
+
+
+def test_scheduler_is_suppressed_in_debug_reloader_parent(monkeypatch):
+    app = Flask(__name__)
+    app.config.update(TESTING=False, SMART_NOTIFICATIONS_ENABLED=True)
+    app.debug = True
+    starts = []
+    monkeypatch.delenv("WERKZEUG_RUN_MAIN", raising=False)
     monkeypatch.setattr(scheduler.threading.Thread, "start", lambda self: starts.append(self))
 
     start_smart_notification_scheduler(app)

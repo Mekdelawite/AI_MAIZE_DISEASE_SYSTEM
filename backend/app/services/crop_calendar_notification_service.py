@@ -302,6 +302,20 @@ class CropCalendarNotificationService:
             from flask import current_app
             current_app.logger.exception("Crop reminder current weather unavailable (farmer_id=%s)", user.id)
 
+        if current is None and prefs["categories"]["agricultural_advisory"]["in_app"]:
+            fallback = cls._create_notification(
+                user=user,
+                profile=profile,
+                notification_type="agricultural_advisory",
+                dedupe_key=f"weather_unavailable:{today.isoformat()}",
+                title=("Live weather update unavailable", "የቀጥታ የአየር ሁኔታ መረጃ አልተገኘም"),
+                message=(
+                    "Live weather is temporarily unavailable. Check rainfall and soil moisture in your field before making irrigation or spraying decisions; this notice contains no live measurements.",
+                    "የቀጥታ የአየር ሁኔታ መረጃ ለጊዜው አልተገኘም። የመስኖ ወይም የርጭት ውሳኔ ከመወሰንዎ በፊት በእርሻዎ ያለውን ዝናብና የአፈር እርጥበት ይመልከቱ፤ ይህ ማስታወቂያ የቀጥታ መለኪያዎችን አያቀርብም።",
+                ),
+            )
+            created["agricultural_advisory"] += int(fallback is not None)
+
         try:
             language = user.preferred_language if user.preferred_language in {"en", "am"} else "en"
             calendar = CropCalendarService.get_calendar(
