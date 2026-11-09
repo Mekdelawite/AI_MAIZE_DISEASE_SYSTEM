@@ -26,6 +26,30 @@ export interface AuthSessionResponse {
   user?: UserRecord;
 }
 
+function readAuthSession(raw: any): { token: string; user: UserRecord } {
+  if (raw?.success === false) {
+    throw new Error(
+      raw?.error?.message || raw?.message || 'Authentication failed.',
+    );
+  }
+
+  const data = raw?.data?.data ?? raw?.data ?? raw;
+  const token =
+    data?.token ||
+    data?.access_token ||
+    raw?.token ||
+    raw?.access_token;
+  const user = data?.user || raw?.user || data;
+
+  if (typeof token !== 'string' || !token.trim()) {
+    throw new Error(
+      'Authentication response did not include a valid JWT token.',
+    );
+  }
+
+  return { token, user: user as UserRecord };
+}
+
 export const authService = {
   async login(
     payload: LoginPayload,
@@ -42,21 +66,7 @@ export const authService = {
       skipAuth: true,
     });
 
-    const token =
-      raw?.token ||
-      raw?.access_token ||
-      raw?.data?.token ||
-      raw?.data?.access_token;
-
-    const user = raw?.user || raw?.data?.user || raw?.data || raw;
-
-    if (!token) {
-      throw new Error(
-        'Authentication response did not include a valid JWT token.',
-      );
-    }
-
-    return { token, user };
+    return readAuthSession(raw);
   },
 
   async requestRegistrationOTP(phone_number: string): Promise<any> {
@@ -83,7 +93,9 @@ export const authService = {
     });
   },
 
-  async register(payload: RegisterPayload): Promise<any> {
+  async register(
+    payload: RegisterPayload,
+  ): Promise<{ token: string; user: UserRecord }> {
     const cleanBody: Record<string, unknown> = {
       full_name: payload.full_name.trim(),
       phone_number: payload.phone_number.trim(),
@@ -112,11 +124,20 @@ export const authService = {
       cleanBody.longitude = payload.longitude;
     }
 
-    return apiRequest('/api/auth/register', {
+    const raw = await apiRequest<any>('/api/auth/register', {
       method: 'POST',
       body: cleanBody,
       skipAuth: true,
     });
+
+    const session = readAuthSession(raw);
+    if (!session.user || session.user.role !== 'farmer') {
+      throw new Error(
+        'Registration response did not include a valid farmer account.',
+      );
+    }
+
+    return session;
   },
 
   async getCurrentUser(): Promise<UserRecord> {
@@ -149,6 +170,28 @@ export const authService = {
         otp: payload.otp.trim(),
         new_password: payload.new_password,
       },
+      skipAuth: true,
+    });
+  },
+
+  async verifyExtensionAgentActivation(contact: string, code: string): Promise<{
+    activation_token: string;
+    expires_in_seconds: number;
+  }> {
+    return apiRequest('/api/auth/extension-agent/activation/verify', {
+      method: 'POST',
+      body: { contact: contact.trim(), code: code.trim() },
+      skipAuth: true,
+    });
+  },
+
+  async completeExtensionAgentActivation(
+    activation_token: string,
+    password: string,
+  ): Promise<{ message: string }> {
+    return apiRequest('/api/auth/extension-agent/activation/complete', {
+      method: 'POST',
+      body: { activation_token, password },
       skipAuth: true,
     });
   },

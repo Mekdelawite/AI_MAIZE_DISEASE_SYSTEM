@@ -1,6 +1,11 @@
 from flask_jwt_extended import create_access_token
 
 from backend.app.extensions import db
+from backend.app.models.administrative_division import (
+    GeographyRegion,
+    GeographyWoreda,
+    GeographyZone,
+)
 from backend.app.models.extension_agent import ExtensionAgent
 from backend.app.models.outbreak_alert import OutbreakAlert
 from backend.app.models.user import User
@@ -31,8 +36,28 @@ def test_outbreak_alert_list_is_scoped_for_extension_agents(client, database):
     agent = _user("extension_agent", "0900000981")
     farmer = _user("farmer", "0900000982")
     admin = _user("admin", "0900000983")
+    region = GeographyRegion(id="test-region", name_en="Amhara")
+    zone = GeographyZone(
+        id="test-zone",
+        region_id=region.id,
+        name_en="Bahir Dar",
+    )
+    woreda = GeographyWoreda(
+        id="test-woreda",
+        zone_id=zone.id,
+        name_en="Bahir Dar Zuria",
+    )
+    db.session.add_all([region, zone, woreda])
     db.session.add(
-        ExtensionAgent(user_id=agent.id, region="Amhara", woreda="Bahir Dar Zuria")
+        ExtensionAgent(
+            user_id=agent.id,
+            region=region.name_en,
+            zone=zone.name_en,
+            woreda=woreda.name_en,
+            region_id=region.id,
+            zone_id=zone.id,
+            woreda_id=woreda.id,
+        )
     )
     db.session.add_all(
         [

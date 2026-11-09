@@ -12,6 +12,7 @@ import {
 
 import { PublicLayout } from '../components/layout/PublicLayout';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { authService } from '../services/authService';
 import { locationService, type WoredaOption } from '../services/locationService';
 
@@ -43,6 +44,7 @@ const OTP_LENGTH = 6;
 
 export const RegisterPage: React.FC = () => {
   const { t, language, notify } = useApp();
+  const { establishSession } = useAuth();
   const navigate = useNavigate();
 
   // Registration form fields
@@ -291,7 +293,7 @@ export const RegisterPage: React.FC = () => {
         ? Number(longitude)
         : undefined;
 
-      const result = await authService.register({
+      const { token, user } = await authService.register({
         full_name: fullName.trim(),
         phone_number: verifiedPhone,
         password,
@@ -304,27 +306,18 @@ export const RegisterPage: React.FC = () => {
         sms_opt_in: smsOptIn,
       });
 
-      if (result?.success === false || result?.error) {
-        throw new Error(
-          result?.message ||
-            result?.error ||
-            'The server could not create your account.',
-        );
-      }
+      await establishSession(token, user);
 
       setPhoneVerified(true);
       setSuccessMessage(
-        'Registration successful! Your account has been created. Redirecting to login...',
+        'Registration successful! Your account has been created. Opening your dashboard...',
       );
 
       notify(
-        'Registration successful! You can now log in.',
+        'Registration successful! Welcome to MaizeCare.',
         'success',
       );
-
-      window.setTimeout(() => {
-        navigate('/login', { replace: true });
-      }, 2000);
+      navigate('/farmer/dashboard', { replace: true });
     } catch (err: any) {
       setErrorMessage(
         err?.message ||

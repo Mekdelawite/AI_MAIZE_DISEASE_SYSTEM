@@ -3,51 +3,52 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import React, { lazy, Suspense } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import {
   LoadingSkeleton,
   ToastContainer,
 } from './components/common/FeedbackStates';
-import { ProtectedRoute } from './components/layout/ProtectedRoute';
+import { getDefaultHomeForRole, ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AppProvider } from './context/AppContext';
-import { AuthProvider } from './context/AuthContext';
-import { AdminDashboardPage } from './pages/AdminDashboardPage';
-import { AdminDiagnosisActivityPage } from './pages/AdminDiagnosisActivityPage';
-import { AdminGeoDiseaseMapPage } from './pages/AdminGeoDiseaseMapPage';
-import { AboutDevelopersPage } from './pages/AboutDevelopersPage';
-import { CropCalendarPage } from './pages/CropCalendarPage';
-import { DiagnosisDetailPage } from './pages/DiagnosisDetailPage';
-import { DiagnosisHistoryPage } from './pages/DiagnosisHistoryPage';
-import DiagnosisPage from "./pages/DiagnosisPage";
-import { DiagnosisResultPage } from './pages/DiagnosisResultPage';
-import { DiscussionPage } from './pages/DiscussionPage';
-import { ExtensionAgentManagementPage } from './pages/ExtensionAgentManagementPage';
-import { ExtensionCasesPage } from './pages/ExtensionCasesPage';
-import { ExtensionDashboardPage } from './pages/ExtensionDashboardPage';
-import { ExtensionFarmerDetailPage } from './pages/ExtensionFarmerDetailPage';
-import { ExtensionMapPage } from './pages/ExtensionMapPage';
-import { FarmerDashboardPage } from './pages/FarmerDashboardPage';
-import { FarmerManagementPage } from './pages/FarmerManagementPage';
-import { LandingPage } from './pages/LandingPage';
-import { LoginPage } from './pages/LoginPage';
-import { NotFoundPage } from './pages/NotFoundPage';
-import { OutbreakManagementPage } from './pages/OutbreakManagementPage';
-import { OutbreakSmsPage } from './pages/OutbreakSmsPage';
-import { PasswordRecoveryPage } from './pages/PasswordRecoveryPage';
-import { ProfilePage } from './pages/ProfilePage';
-import { RegisterPage } from './pages/RegisterPage';
-import { ReportsPage } from './pages/ReportsPage';
-import { RegionalAlertPage } from './pages/RegionalAlertPage';
-import { UserManagementPage } from './pages/UserManagementPage';
-import { WeatherPage } from './pages/WeatherPage';
-import { useLocation } from 'react-router-dom';
-import { useAuth } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { getStoredToken } from './services/api';
 import { syncPendingDiagnoses } from './services/offlineDiagnosisSyncService';
-import { getDefaultHomeForRole } from './components/layout/ProtectedRoute';
+import { useApp } from './context/AppContext';
+
+const AboutDevelopersPage = lazy(() => import('./pages/AboutDevelopersPage').then((page) => ({ default: page.AboutDevelopersPage })));
+const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage').then((page) => ({ default: page.AdminDashboardPage })));
+const AdminDiagnosisActivityPage = lazy(() => import('./pages/AdminDiagnosisActivityPage').then((page) => ({ default: page.AdminDiagnosisActivityPage })));
+const AdminGeoDiseaseMapPage = lazy(() => import('./pages/AdminGeoDiseaseMapPage').then((page) => ({ default: page.AdminGeoDiseaseMapPage })));
+const CropCalendarPage = lazy(() => import('./pages/CropCalendarPage').then((page) => ({ default: page.CropCalendarPage })));
+const DiagnosisDetailPage = lazy(() => import('./pages/DiagnosisDetailPage').then((page) => ({ default: page.DiagnosisDetailPage })));
+const DiagnosisHistoryPage = lazy(() => import('./pages/DiagnosisHistoryPage').then((page) => ({ default: page.DiagnosisHistoryPage })));
+const DiagnosisPage = lazy(() => import('./pages/DiagnosisPage'));
+const DiagnosisResultPage = lazy(() => import('./pages/DiagnosisResultPage').then((page) => ({ default: page.DiagnosisResultPage })));
+const DiscussionPage = lazy(() => import('./pages/DiscussionPage').then((page) => ({ default: page.DiscussionPage })));
+const ExtensionAgentManagementPage = lazy(() => import('./pages/ExtensionAgentManagementPage').then((page) => ({ default: page.ExtensionAgentManagementPage })));
+const ExtensionAgentActivationPage = lazy(() => import('./pages/ExtensionAgentActivationPage').then((page) => ({ default: page.ExtensionAgentActivationPage })));
+const ExtensionCasesPage = lazy(() => import('./pages/ExtensionCasesPage').then((page) => ({ default: page.ExtensionCasesPage })));
+const ExtensionDashboardPage = lazy(() => import('./pages/ExtensionDashboardPage').then((page) => ({ default: page.ExtensionDashboardPage })));
+const ExtensionFarmerDetailPage = lazy(() => import('./pages/ExtensionFarmerDetailPage').then((page) => ({ default: page.ExtensionFarmerDetailPage })));
+const ExtensionMapPage = lazy(() => import('./pages/ExtensionMapPage').then((page) => ({ default: page.ExtensionMapPage })));
+const FarmerDashboardPage = lazy(() => import('./pages/FarmerDashboardPage').then((page) => ({ default: page.FarmerDashboardPage })));
+const FarmerManagementPage = lazy(() => import('./pages/FarmerManagementPage').then((page) => ({ default: page.FarmerManagementPage })));
+const LandingPage = lazy(() => import('./pages/LandingPage').then((page) => ({ default: page.LandingPage })));
+const LoginPage = lazy(() => import('./pages/LoginPage').then((page) => ({ default: page.LoginPage })));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((page) => ({ default: page.NotFoundPage })));
+const OutbreakManagementPage = lazy(() => import('./pages/OutbreakManagementPage').then((page) => ({ default: page.OutbreakManagementPage })));
+const OutbreakSmsPage = lazy(() => import('./pages/OutbreakSmsPage').then((page) => ({ default: page.OutbreakSmsPage })));
+const PasswordRecoveryPage = lazy(() => import('./pages/PasswordRecoveryPage').then((page) => ({ default: page.PasswordRecoveryPage })));
+const ProfilePage = lazy(() => import('./pages/ProfilePage').then((page) => ({ default: page.ProfilePage })));
+const RegisterPage = lazy(() => import('./pages/RegisterPage').then((page) => ({ default: page.RegisterPage })));
+const ReportsPage = lazy(() => import('./pages/ReportsPage').then((page) => ({ default: page.ReportsPage })));
+const RegionalAlertPage = lazy(() => import('./pages/RegionalAlertPage').then((page) => ({ default: page.RegionalAlertPage })));
+const UserManagementPage = lazy(() => import('./pages/UserManagementPage').then((page) => ({ default: page.UserManagementPage })));
+const WeatherPage = lazy(() => import('./pages/WeatherPage').then((page) => ({ default: page.WeatherPage })));
 function OfflineSyncRunner() {
   const location = useLocation();
+  const { isOnline } = useApp();
   const { user, isAuthenticated } = useAuth();
   const userId = user?.id;
   const syncingRef = React.useRef(false);
@@ -57,6 +58,7 @@ function OfflineSyncRunner() {
   const runSync = React.useCallback(async () => {
     if (
       !navigator.onLine ||
+      !isOnline ||
       !isAuthenticated ||
       userId === undefined ||
       !getStoredToken()
@@ -72,7 +74,7 @@ function OfflineSyncRunner() {
     syncingRef.current = true;
 
     try {
-      await syncPendingDiagnoses(userId, 'en');
+      await syncPendingDiagnoses(userId, user?.preferred_language ?? 'en');
     } catch (error) {
       console.error('Offline diagnosis sync could not complete:', error);
     } finally {
@@ -82,7 +84,7 @@ function OfflineSyncRunner() {
         queueMicrotask(() => runSyncRef.current());
       }
     }
-  }, [isAuthenticated, userId]);
+  }, [isAuthenticated, isOnline, userId, user?.preferred_language]);
   runSyncRef.current = runSync;
 
   // Retry on startup and after navigation, including after login.
@@ -92,7 +94,10 @@ function OfflineSyncRunner() {
 
   // Retry when the internet returns or the user returns to the tab.
   React.useEffect(() => {
-    const handleOnline = () => void runSync();
+    const handleOnline = () => {
+      void runSync();
+    };
+    const handleQueueChanged = () => void runSync();
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         void runSync();
@@ -100,11 +105,21 @@ function OfflineSyncRunner() {
     };
 
     window.addEventListener('online', handleOnline);
+    window.addEventListener(
+      'maizecare:offline-diagnosis-queue-changed',
+      handleQueueChanged,
+    );
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    const retryTimer = window.setInterval(() => void runSync(), 60_000);
 
     return () => {
       window.removeEventListener('online', handleOnline);
+      window.removeEventListener(
+        'maizecare:offline-diagnosis-queue-changed',
+        handleQueueChanged,
+      );
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.clearInterval(retryTimer);
     };
   }, [runSync]);
 
@@ -117,6 +132,41 @@ function AuthRouteLoading() {
       <LoadingSkeleton rows={5} />
     </div>
   );
+}
+
+function RouteLoadErrorView() {
+  const { t } = useApp();
+  return (
+    <div className="mx-auto max-w-xl px-5 py-12 text-center" role="alert">
+      <p className="text-sm text-stone-700 dark:text-stone-200">{t('routeLoadError')}</p>
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg bg-emerald-900 px-4 py-2 text-sm font-semibold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+      >
+        {t('reloadPage')}
+      </button>
+    </div>
+  );
+}
+
+class RouteLoadErrorBoundary extends React.Component<
+  React.PropsWithChildren,
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('A page could not be loaded:', error);
+  }
+
+  render() {
+    return this.state.hasError ? <RouteLoadErrorView /> : this.props.children;
+  }
 }
 
 function HomeRoute() {
@@ -163,7 +213,9 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
         <OfflineSyncRunner />
-          <Routes>
+        <RouteLoadErrorBoundary>
+          <Suspense fallback={<div className="max-w-5xl mx-auto px-6 py-12"><LoadingSkeleton rows={3} /></div>}>
+            <Routes>
             {/* Public Routes */}
 
             <Route path="/" element={<HomeRoute />} />
@@ -192,6 +244,7 @@ export default function App() {
               }
             />
             <Route path="/recover-password" element={<PasswordRecoveryPage />} />
+            <Route path="/activate-extension-agent" element={<ExtensionAgentActivationPage />} />
 
             {/* Farmer Workspace Routes */}
             <Route
@@ -385,7 +438,9 @@ export default function App() {
 
             {/* Catch-all 404 */}
             <Route path="*" element={<NotFoundPage />} />
-          </Routes>
+            </Routes>
+          </Suspense>
+        </RouteLoadErrorBoundary>
           <ToastContainer />
         </BrowserRouter>
       </AuthProvider>

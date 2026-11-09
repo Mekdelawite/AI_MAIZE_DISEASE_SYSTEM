@@ -16,7 +16,36 @@ export interface FarmerNotificationsResponse {
   notifications: FarmerNotification[];
 }
 
+export interface FarmerPushConfig {
+  enabled: boolean;
+  public_key: string | null;
+}
+
 export const notificationService = {
+  async getPushConfig(): Promise<FarmerPushConfig> {
+    const response = await apiRequest<FarmerPushConfig>('/api/farmer/push/config', {
+      method: 'GET',
+    });
+    if (typeof response?.enabled !== 'boolean') {
+      throw new Error('The push notification service returned an invalid configuration.');
+    }
+    return response;
+  },
+
+  async savePushSubscription(subscription: PushSubscriptionJSON): Promise<void> {
+    await apiRequest('/api/farmer/push/subscriptions', {
+      method: 'POST',
+      body: subscription,
+    });
+  },
+
+  async removePushSubscription(endpoint: string): Promise<void> {
+    await apiRequest('/api/farmer/push/subscriptions', {
+      method: 'DELETE',
+      body: { endpoint },
+    });
+  },
+
   async getFarmerNotifications(): Promise<FarmerNotification[]> {
     const response = await apiRequest<FarmerNotificationsResponse>('/api/farmer/notifications', { method: 'GET' });
     if (!Array.isArray(response?.notifications)) {

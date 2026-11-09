@@ -32,16 +32,28 @@ export const DiagnosisResultPage: React.FC = () => {
 
   const state = (location.state as {
     result?: CompleteDiagnosisResponse;
-    uploadedPreviewUrl?: string;
+    uploadedImage?: File;
   }) || {};
 
   const result = state.result;
+  const [uploadedPreviewUrl, setUploadedPreviewUrl] = useState<string | null>(null);
   const [heatmapImgError, setHeatmapImgError] = useState(false);
   const [speakingLanguage, setSpeakingLanguage] = useState<'en' | 'am' | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'am'>(appLanguage);
   const [localizedAdvisories, setLocalizedAdvisories] = useState<Partial<Record<'en' | 'am', AdvisoryRecord>>>(() => result?.advisory?.language ? { [result.advisory.language]: result.advisory } : {});
   const [languageLoading, setLanguageLoading] = useState(false);
   const [languageError, setLanguageError] = useState('');
+
+  useEffect(() => {
+    if (!state.uploadedImage) {
+      setUploadedPreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(state.uploadedImage);
+    setUploadedPreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [state.uploadedImage]);
 
   useEffect(() => {
     setSelectedLanguage(appLanguage);
@@ -154,7 +166,7 @@ export const DiagnosisResultPage: React.FC = () => {
       ) || resolveMediaUrl(diagnosis.explainability?.heatmap_url || diagnosis.heatmap_url);
 
   const resolvedOriginalImageUrl =
-    state.uploadedPreviewUrl || resolveMediaUrl(diagnosis.image_url);
+    uploadedPreviewUrl || resolveMediaUrl(diagnosis.image_url);
 
   const treatmentContent = advisory?.management || advisory?.treatment || advisory?.treatments || advisory?.recommendations;
   const preventionContent = advisory?.prevention || advisory?.preventions;

@@ -35,7 +35,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request, send_from_directory, url_for
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 from PIL import Image, UnidentifiedImageError
 
@@ -45,6 +45,7 @@ from backend.app.models import (
     DiscussionReply,
     DiscussionPostLike,
     DiagnosisRecord,
+    ExtensionAgent,
     FarmerProfile,
     User,
 )
@@ -258,6 +259,37 @@ def _owned_post_or_error(post_id: int, user: User):
 
 def _post_visibility_error(post: DiscussionPost, user: User):
     """Keep detail and mutation access aligned with farmer feed visibility."""
+    if user.role == "extension_agent":
+        agent = db.session.get(ExtensionAgent, user.id)
+        if (
+            agent is None
+            or agent.account_status != "active"
+            or not agent.region_id
+            or not agent.zone_id
+            or not agent.woreda_id
+        ):
+            return error_response(
+                "FORBIDDEN",
+                "An active single-woreda assignment is required.",
+                403,
+            )
+        is_general = (
+            post.target_region is None
+            and post.target_woreda is None
+            and post.target_kebele is None
+        )
+        is_assigned_woreda = (
+            post.target_region == agent.region
+            and post.target_woreda == agent.woreda
+        )
+        if not is_general and not is_assigned_woreda:
+            return error_response(
+                "FORBIDDEN",
+                "This post is outside your assigned woreda.",
+                403,
+            )
+        return None
+
     if user.role != "farmer":
         return None
 
@@ -482,6 +514,28 @@ def create_post():
                 "You can only link your own diagnosis.",
                 403,
             )
+        if user.role == "extension_agent":
+            agent = db.session.get(ExtensionAgent, user.id)
+            farmer_profile = (
+                diagnosis.user.farmer_profile
+                if diagnosis.user
+                else None
+            )
+            if (
+                agent is None
+                or agent.account_status != "active"
+                or not agent.region_id
+                or not agent.zone_id
+                or not agent.woreda_id
+                or farmer_profile is None
+                or farmer_profile.region != agent.region
+                or farmer_profile.woreda != agent.woreda
+            ):
+                return error_response(
+                    "FORBIDDEN",
+                    "You can only link diagnoses from your assigned woreda.",
+                    403,
+                )
 
     priority = str(
         data.get("priority", "normal")
@@ -517,6 +571,21 @@ def create_post():
             target_woreda,
             target_kebele,
         ) = location_result
+        agent = db.session.get(ExtensionAgent, user.id)
+        if (
+            agent is None
+            or agent.account_status != "active"
+            or not agent.region_id
+            or not agent.zone_id
+            or not agent.woreda_id
+            or target_region != agent.region
+            or target_woreda != agent.woreda
+        ):
+            return error_response(
+                "FORBIDDEN",
+                "Extension-agent posts must target the assigned woreda.",
+                403,
+            )
 
     else:
         # Farmers do not define the audience of their question.
@@ -657,11 +726,8 @@ def list_posts():
             DiscussionPost.priority == priority
         )
 
-    # Farmers should see:
-    #   1. general posts
-    #   2. extension posts targeted to their location
-    #
-    # Extension agents can see all posts.
+    # Farmers see general and location-targeted posts. Agents see general
+    # posts and posts targeted exactly to their assigned woreda.
     if user.role == "farmer":
         profile = FarmerProfile.query.filter_by(
             user_id=user.id
@@ -706,15 +772,39 @@ def list_posts():
                             DiscussionPost.target_kebele == profile.kebele,
                         )
                     )
-
         else:
-            # Without a farmer profile, only general posts
-            # are visible.
             query = query.filter(
                 DiscussionPost.target_region.is_(None),
                 DiscussionPost.target_woreda.is_(None),
                 DiscussionPost.target_kebele.is_(None),
             )
+    elif user.role == "extension_agent":
+        agent = db.session.get(ExtensionAgent, user.id)
+        if (
+            agent is None
+            or agent.account_status != "active"
+            or not agent.region_id
+            or not agent.zone_id
+            or not agent.woreda_id
+        ):
+            return error_response(
+                "FORBIDDEN",
+                "An active single-woreda assignment is required.",
+                403,
+            )
+        query = query.filter(
+            or_(
+                and_(
+                    DiscussionPost.target_region.is_(None),
+                    DiscussionPost.target_woreda.is_(None),
+                    DiscussionPost.target_kebele.is_(None),
+                ),
+                and_(
+                    DiscussionPost.target_region == agent.region,
+                    DiscussionPost.target_woreda == agent.woreda,
+                ),
+            )
+        )
 
     pagination = query.order_by(
         DiscussionPost.created_at.desc()
@@ -896,6 +986,9 @@ def update_post(post_id):
     post, error = _owned_post_or_error(post_id, user)
     if error:
         return error
+    visibility_error = _post_visibility_error(post, user)
+    if visibility_error:
+        return visibility_error
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -931,6 +1024,9 @@ def delete_post(post_id):
     post, error = _owned_post_or_error(post_id, user)
     if error:
         return error
+    visibility_error = _post_visibility_error(post, user)
+    if visibility_error:
+        return visibility_error
 
     image_path = post.image_path
     db.session.delete(post)

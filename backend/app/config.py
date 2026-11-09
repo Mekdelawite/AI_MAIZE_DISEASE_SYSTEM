@@ -71,7 +71,14 @@ class Config:
         # -----------------------------------------------------
     # JWT Authentication
     # -----------------------------------------------------
-
+    # Extension Agent activation page (frontend URL)
+    ACTIVATION_FRONTEND_URL = (
+        os.getenv(
+            "ACTIVATION_FRONTEND_URL",
+            "http://localhost:5173",
+        ).strip().rstrip("/")
+        or "http://localhost:5173"
+    )
     JWT_SECRET_KEY = os.getenv(
         "JWT_SECRET_KEY",
         "dev-change-this-jwt-secret-key",
@@ -80,6 +87,7 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES = int(
         os.getenv(
             "JWT_ACCESS_TOKEN_EXPIRES",
+            "3600",
         )
     )
         # -----------------------------------------------------
@@ -183,6 +191,29 @@ class Config:
     SMART_NOTIFICATIONS_ENABLED = os.getenv("SMART_NOTIFICATIONS_ENABLED", "true").lower() in {"1", "true", "yes"}
     # Urgent outbreak alerts may bypass quiet hours, but never category or SMS consent.
     CRITICAL_ALERTS_BYPASS_QUIET_HOURS = os.getenv("CRITICAL_ALERTS_BYPASS_QUIET_HOURS", "true").lower() in {"1", "true", "yes"}
+    WEB_PUSH_VAPID_PUBLIC_KEY = os.getenv("WEB_PUSH_VAPID_PUBLIC_KEY", "")
+    WEB_PUSH_VAPID_PRIVATE_KEY = os.getenv("WEB_PUSH_VAPID_PRIVATE_KEY", "")
+    WEB_PUSH_VAPID_SUBJECT = os.getenv("WEB_PUSH_VAPID_SUBJECT", "")
+    EMAIL_SMTP_HOST = os.getenv("EMAIL_SMTP_HOST", "")
+    EMAIL_SMTP_PORT = int(os.getenv("EMAIL_SMTP_PORT", "587"))
+    EMAIL_SMTP_USERNAME = os.getenv("EMAIL_SMTP_USERNAME", "")
+    EMAIL_SMTP_PASSWORD = os.getenv("EMAIL_SMTP_PASSWORD", "")
+    EMAIL_SENDER = os.getenv("EMAIL_SENDER", "")
+    EMAIL_SMTP_USE_TLS = os.getenv("EMAIL_SMTP_USE_TLS", "true").lower() in {"1", "true", "yes"}
+    EMAIL_SMTP_TIMEOUT_SECONDS = int(os.getenv("EMAIL_SMTP_TIMEOUT_SECONDS", "15"))
+        # Email provider configuration
+    EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "smtp").lower()
+    RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+    RESEND_API_URL = os.getenv(
+        "RESEND_API_URL",
+        "https://api.resend.com/emails",
+    )
+    EMAIL_API_TIMEOUT_SECONDS = int(
+        os.getenv("EMAIL_API_TIMEOUT_SECONDS", "15")
+    )
+    # Google Apps Script email gateway
+    GOOGLE_APPS_SCRIPT_URL = os.getenv("GOOGLE_APPS_SCRIPT_URL", "")
+    GOOGLE_APPS_SCRIPT_SECRET = os.getenv("GOOGLE_APPS_SCRIPT_SECRET", "")
     # -----------------------------------------------------
     # Upload configuration
     # -----------------------------------------------------

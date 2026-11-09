@@ -239,9 +239,7 @@ export const CropCalendarPage: React.FC = () => {
           </section>
         ) : (
           <>
-            <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-emerald-900 to-green-800 p-6 text-white shadow-lg shadow-emerald-950/10 sm:p-8">
-              <div className="pointer-events-none absolute -right-14 -top-20 h-64 w-64 rounded-full border-[36px] border-white/5" />
-              <div className="pointer-events-none absolute -bottom-28 right-1/4 h-64 w-64 rounded-full border-[28px] border-lime-200/5" />
+            <section className="relative overflow-hidden rounded-[1.75rem] bg-[#14532D] p-5 text-white shadow-[0_14px_36px_rgba(20,83,45,0.16)] sm:p-8">
               <div className="relative grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
                 <div>
                   <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/25 bg-white/10 px-3 py-1.5 text-xs font-semibold text-emerald-100">
@@ -281,7 +279,7 @@ export const CropCalendarPage: React.FC = () => {
             </section>
 
             <section aria-label={t('calendarOverview')} className="grid gap-4 md:grid-cols-3">
-              <article className="rounded-2xl border border-stone-200 bg-white p-5 dark:border-stone-800 dark:bg-[#121A16]">
+              <article className="farmer-card min-w-0 p-5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-sm font-semibold text-stone-700 dark:text-stone-200">
                     <CloudSun className="h-5 w-5 text-amber-600 dark:text-amber-400" />
@@ -319,7 +317,7 @@ export const CropCalendarPage: React.FC = () => {
                 <p className="mt-4 text-xs leading-relaxed text-stone-500 dark:text-stone-400">{t('calendarWeatherDataNote')}</p>
               </article>
 
-              <article className="rounded-2xl border border-stone-200 bg-white p-5 dark:border-stone-800 dark:bg-[#121A16]">
+              <article className="farmer-card min-w-0 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-sm font-semibold text-stone-700 dark:text-stone-200">
                     <CloudSun className="h-5 w-5 text-sky-600 dark:text-sky-400" />
@@ -359,7 +357,7 @@ export const CropCalendarPage: React.FC = () => {
                 )}
               </article>
 
-              <article className="rounded-2xl border border-stone-200 bg-white p-5 dark:border-stone-800 dark:bg-[#121A16]">
+              <article className="farmer-card min-w-0 p-5">
                 <div className="flex items-center gap-2 text-sm font-semibold text-stone-700 dark:text-stone-200">
                   <Droplets className="h-5 w-5 text-teal-700 dark:text-teal-400" />
                   {t('calendarSoilMoisture')}
@@ -393,12 +391,12 @@ export const CropCalendarPage: React.FC = () => {
               </article>
             </section>
 
-            <section className="rounded-2xl border border-stone-200 bg-white p-5 dark:border-stone-800 dark:bg-[#121A16] sm:p-6">
+            <section className="farmer-card min-w-0 p-5 sm:p-6">
               <div className="mb-4">
                 <h2 className="text-lg font-bold text-stone-950 dark:text-white">{t('soilWaterInputs')}</h2>
                 <p className="mt-1 text-sm text-stone-600 dark:text-stone-400">{t('soilWaterNotSensor')}</p>
               </div>
-              <form onSubmit={saveFarmInputs} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <form onSubmit={saveFarmInputs} className="farmer-form grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <label className="text-sm font-medium text-stone-700 dark:text-stone-200">{t('soilWaterPlantingDate')}<input type="date" value={farmInputs.planting_date ?? ''} onChange={(event) => setFarmInputs((p) => ({ ...p, planting_date: event.target.value || null }))} className="mt-1 block w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-900" /></label>
                 <label className="text-sm font-medium text-stone-700 dark:text-stone-200">{t('soilWaterSoilType')}<select value={farmInputs.soil_type ?? ''} onChange={(event) => setFarmInputs((p) => ({ ...p, soil_type: event.target.value || null }))} className="mt-1 block w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-900"><option value="">{t('calendarUnavailable')}</option>{['sand','loamy_sand','sandy_loam','loam','silt_loam','silt','sandy_clay_loam','clay_loam','silty_clay_loam','sandy_clay','silty_clay','clay'].map((soil) => <option key={soil} value={soil}>{t(`soilWaterTexture${soil.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('')}`)}</option>)}</select></label>
                 <label className="text-sm font-medium text-stone-700 dark:text-stone-200">{t('soilWaterAwc')}<input type="number" min="1" max="300" step="0.1" value={farmInputs.available_water_capacity_mm_per_m ?? ''} onChange={(event) => setFarmInputs((p) => ({ ...p, available_water_capacity_mm_per_m: event.target.value ? Number(event.target.value) : null }))} className="mt-1 block w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-900" /><span className="mt-1 block text-xs font-normal text-stone-500 dark:text-stone-400">{t('soilWaterAwcHelp')}</span></label>
@@ -424,7 +422,7 @@ export const CropCalendarPage: React.FC = () => {
               </section>
             )}
 
-            <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm dark:border-stone-800 dark:bg-[#121A16] sm:p-6" aria-labelledby="agricultural-advisories-title">
+            <section className="farmer-card min-w-0 p-5 sm:p-6" aria-labelledby="agricultural-advisories-title">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-800 dark:text-emerald-400">{t('advisoryToday')}</p>
@@ -555,41 +553,46 @@ export const CropCalendarPage: React.FC = () => {
               {stages.length === 0 ? (
                 <div className="rounded-2xl border border-stone-200 bg-white p-6 text-sm text-stone-600 dark:border-stone-800 dark:bg-[#121A16] dark:text-stone-400">{t('calendarEmptyDescription')}</div>
               ) : (
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <ol className="relative space-y-4 border-l-2 border-emerald-100 pl-5 dark:border-emerald-950 sm:space-y-5">
                   {stages.map((stage, index) => {
                     const isCurrent = stage.stage === currentStage?.stage;
                     return (
-                      <article
+                      <li
                         key={stage.stage}
-                        className={`rounded-2xl border bg-white p-5 transition dark:bg-[#121A16] ${isCurrent ? 'border-emerald-600 ring-2 ring-emerald-600/15 dark:border-emerald-500' : 'border-stone-200 dark:border-stone-800'}`}
+                        className="relative min-w-0"
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-xs font-bold uppercase tracking-[0.14em] text-stone-500 dark:text-stone-400">{t('calendarStage')} {String(index + 1).padStart(2, '0')}</span>
-                          {isCurrent && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-200"><Check className="h-3.5 w-3.5" />{t('calendarCurrentStage')}</span>}
-                        </div>
-                        <h3 className="mt-4 text-xl font-bold text-stone-950 dark:text-white">{stage.label}</h3>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {stage.months.map((month) => (
-                            <span key={month} className="rounded-lg bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-700 dark:bg-stone-800 dark:text-stone-200">{month}</span>
-                          ))}
-                        </div>
-                        {stage.activities && stage.activities.length > 0 && (
-                          <div className="mt-5 border-t border-stone-100 pt-4 dark:border-stone-800">
-                            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-stone-500 dark:text-stone-400">{t('calendarActivities')}</p>
-                            <ul className="space-y-2.5">
-                              {stage.activities.map((activity, activityIndex) => (
-                                <li key={`${stage.stage}-${activityIndex}`} className="flex items-start gap-2.5 text-sm leading-relaxed text-stone-700 dark:text-stone-300">
-                                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" />
-                                  <span>{activity}</span>
-                                </li>
-                              ))}
-                            </ul>
+                        <span className={`absolute -left-[1.68rem] top-5 flex h-5 w-5 items-center justify-center rounded-full ring-4 ring-[#F7F8F4] dark:ring-[#0C1310] ${isCurrent ? 'bg-[#22A06B]' : 'bg-stone-300 dark:bg-stone-700'}`}>
+                          {isCurrent && <span className="h-2 w-2 rounded-full bg-white" />}
+                        </span>
+                        <article className={`farmer-card min-w-0 p-4 transition sm:p-5 ${isCurrent ? 'border-emerald-500 dark:border-emerald-500' : ''}`}>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-bold uppercase tracking-[0.14em] text-stone-500 dark:text-stone-400">{t('calendarStage')} {String(index + 1).padStart(2, '0')}</span>
+                            {isCurrent && <span className="inline-flex items-center gap-1 rounded-full bg-lime-100 px-2.5 py-1 text-xs font-semibold text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-200"><Check className="h-3.5 w-3.5" />{t('calendarCurrentStage')}</span>}
                           </div>
-                        )}
-                      </article>
+                          <h3 className="mt-3 break-words text-lg font-bold text-stone-950 dark:text-white sm:text-xl">{stage.label}</h3>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {stage.months.map((month) => (
+                              <span key={month} className="rounded-full bg-stone-100 px-3 py-1 text-xs font-medium text-stone-700 dark:bg-stone-800 dark:text-stone-200">{month}</span>
+                            ))}
+                          </div>
+                          {stage.activities && stage.activities.length > 0 && (
+                            <div className="mt-4 border-t border-stone-100 pt-4 dark:border-stone-800">
+                              <p className="mb-3 text-xs font-bold uppercase tracking-wide text-stone-500 dark:text-stone-400">{t('calendarActivities')}</p>
+                              <ul className="space-y-2.5">
+                                {stage.activities.map((activity, activityIndex) => (
+                                  <li key={`${stage.stage}-${activityIndex}`} className="flex items-start gap-2.5 text-sm leading-relaxed text-stone-700 dark:text-stone-300">
+                                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" />
+                                    <span>{activity}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </article>
+                      </li>
                     );
                   })}
-                </div>
+                </ol>
               )}
             </section>
           </>

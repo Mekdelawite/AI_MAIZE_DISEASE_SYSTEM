@@ -176,6 +176,108 @@ def test_missing_live_weather_creates_bilingual_fallback_guidance(monkeypatch):
     assert row["title"][1] and row["message"][1]
 
 
+def test_weather_api_failures_keep_calendar_and_saved_stage_advice_idempotent(monkeypatch):
+    saved = _persist_fake(monkeypatch)
+    today = date(2026, 5, 15)
+    profile = _profile(planting_date=today + timedelta(days=1))
+    user = _user(language="am")
+    real_generate = notifications.AgriculturalAdvisoryService.generate
+    real_soil_calculate = notifications.SoilWaterService.calculate
+
+    def unavailable(*args, **kwargs):
+        raise TimeoutError("provider timed out")
+
+    _patch_weather_and_advisories(monkeypatch, [])
+    monkeypatch.setattr(notifications.WeatherService, "get_forecast_by_coordinates", unavailable)
+    monkeypatch.setattr(notifications.WeatherService, "get_historical_water_weather", unavailable)
+    monkeypatch.setattr(notifications.WeatherService, "get_current_weather_by_coordinates", unavailable)
+    monkeypatch.setattr(notifications.SoilWaterService, "calculate", real_soil_calculate)
+    advisory_results = []
+    advisory_inputs = []
+
+    def generate(**kwargs):
+        result = real_generate(**kwargs)
+        advisory_results.append(result)
+        advisory_inputs.append(kwargs)
+        return result
+
+    monkeypatch.setattr(notifications.AgriculturalAdvisoryService, "generate", generate)
+
+    with Flask(__name__).app_context():
+        first = CropCalendarNotificationService.process_farmer(
+            user, profile, today=today
+        )
+        repeated = CropCalendarNotificationService.process_farmer(
+            user, profile, today=today
+        )
+
+    assert first["crop_activity"] == 1
+    assert first["agricultural_advisory"] == 1
+    assert repeated["crop_activity"] == repeated["agricultural_advisory"] == 0
+    assert len(saved) == 2
+    assert any(row["dedupe_key"].startswith("activity:") for row in saved.values())
+    fallback = next(row for row in saved.values() if row["notification_type"] == "agricultural_advisory")
+    assert "No weather or soil-moisture measurements are estimated" in fallback["message"][0]
+    assert "የአፈር እርጥበት መለኪያ አይገመትም" in fallback["message"][1]
+    assert all(
+        "crop_stage" in {item["id"] for item in result["recommendations"]}
+        and {
+            "advisoryMissingCurrentWeather",
+            "advisoryMissingForecast",
+            "advisoryMissingHistoricalWeather",
+        }.issubset(result["missing_data_keys"])
+        for result in advisory_results
+    )
+    assert all(
+        values["current_weather"] is None
+        and values["forecast"] is None
+        and values["historical"] is None
+        and values["soil_water"]["root_zone"] is None
+        for values in advisory_inputs
+    )
+
+
+def test_run_daily_continues_to_other_farmers_after_weather_failure(monkeypatch):
+    today = date(2026, 5, 15)
+    _persist_fake(monkeypatch)
+    first_user, second_user = _user(7), _user(8)
+    first_profile = _profile(user_id=7)
+    second_profile = _profile(user_id=8)
+    second_profile.latitude = 8.6
+
+    class FarmerQuery:
+        def join(self, *args, **kwargs):
+            return self
+
+        def filter(self, *args, **kwargs):
+            return self
+
+        def all(self):
+            return [(first_user, first_profile), (second_user, second_profile)]
+
+    monkeypatch.setattr(notifications.db.session, "query", lambda *_args: FarmerQuery())
+    _patch_weather_and_advisories(monkeypatch, [])
+    successful_forecasts = []
+
+    def forecast(latitude, longitude):
+        if latitude == first_profile.latitude:
+            raise TimeoutError("Open-Meteo timed out")
+        successful_forecasts.append((latitude, longitude))
+        return {
+            "provider": "Open-Meteo",
+            "days": [{"date": today.isoformat(), "weather_code": 2, "precipitation_mm": 0}],
+        }
+
+    monkeypatch.setattr(notifications.WeatherService, "get_forecast_by_coordinates", forecast)
+
+    with Flask(__name__).app_context():
+        totals = CropCalendarNotificationService.run_daily()
+
+    assert totals["farmers"] == 2
+    assert totals["failed"] == 0
+    assert successful_forecasts == [(second_profile.latitude, second_profile.longitude)]
+
+
 def test_missing_location_still_notifies_of_missing_inputs_without_weather_calls(monkeypatch):
     saved = _persist_fake(monkeypatch)
     profile = _profile(planting_date=None, coordinates=False)

@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from backend.app.models import DiagnosisRecord, OfflineSyncRecord, User
 from backend.app.services.offline_sync_service import OfflineSyncError, OfflineSyncService
@@ -75,6 +77,21 @@ def test_operation_at_maximum_attempts_is_rejected(database, tmp_path):
 
     with pytest.raises(OfflineSyncError, match="Maximum synchronization attempts"):
         service.synchronize_diagnosis("max-attempts-op", "diagnosis", user.id, image_path)
+
+
+def test_operation_at_maximum_attempts_can_retry_after_cooldown():
+    record = OfflineSyncRecord(
+        attempts=OfflineSyncService.MAX_ATTEMPTS,
+        updated_at=(
+            datetime.now(timezone.utc)
+            - OfflineSyncService.RETRY_COOLDOWN
+            - timedelta(seconds=1)
+        ),
+    )
+
+    OfflineSyncService._refresh_retry_budget(record)
+
+    assert record.attempts == 0
 
 
 def test_operation_already_processing_is_rejected(database, tmp_path):

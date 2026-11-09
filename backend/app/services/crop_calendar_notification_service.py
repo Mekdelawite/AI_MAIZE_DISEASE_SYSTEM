@@ -8,6 +8,9 @@ created from current provider data and Phase 4's existing advisory rules.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, time as local_time
+import logging
+import threading
+import time
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import IntegrityError
@@ -21,12 +24,35 @@ from backend.app.services.sms_service import SMSService
 from backend.app.services.weather_service import WeatherService
 
 
+_WEATHER_LOG_LOCK = threading.Lock()
+_WEATHER_LOGGED_FAILURES: dict[str, float] = {}
+_WEATHER_LOG_INTERVAL_SECONDS = 60
+
+
+def _log_weather_unavailable(provider: str, user_id: int, error: Exception) -> None:
+    now = time.monotonic()
+    with _WEATHER_LOG_LOCK:
+        last_logged = _WEATHER_LOGGED_FAILURES.get(provider, 0)
+        if now - last_logged < _WEATHER_LOG_INTERVAL_SECONDS:
+            return
+        _WEATHER_LOGGED_FAILURES[provider] = now
+
+    status = getattr(getattr(error, "response", None), "status_code", None)
+    detail = f"HTTP {status}" if status is not None else f"{type(error).__name__}: {error}"
+    logging.getLogger(__name__).warning(
+        "%s weather unavailable (farmer_id=%s; %s)",
+        provider,
+        user_id,
+        detail,
+    )
+
+
 class CropCalendarNotificationService:
     CATEGORY_MAP = {"crop_activity": "crop_activity", "weather_alert": "weather_alert", "soil_water_alert": "soil_water_alert", "agricultural_advisory": "agricultural_advisory", "outbreak_alert": "important_alerts", "regional_alert": "important_alerts"}
 
     @staticmethod
     def preferences(profile):
-        defaults = {key: {"in_app": True, "sms": True} for key in ("crop_activity", "weather_alert", "soil_water_alert", "agricultural_advisory", "important_alerts")}
+        defaults = {key: {"in_app": True, "sms": True, "push": False} for key in ("crop_activity", "weather_alert", "soil_water_alert", "agricultural_advisory", "important_alerts")}
         saved = getattr(profile, "notification_preferences", None) or {}
         if not isinstance(saved, dict):
             saved = {}
@@ -195,6 +221,20 @@ class CropCalendarNotificationService:
         db.session.add(item)
         try:
             db.session.commit()
+            try:
+                from backend.app.services.web_push_service import WebPushService
+
+                WebPushService.enqueue_notification(item)
+            except Exception:
+                from flask import current_app, has_app_context
+
+                db.session.rollback()
+                if has_app_context():
+                    current_app.logger.exception(
+                        "Could not enqueue push notification (farmer_id=%s, key=%s).",
+                        user.id,
+                        dedupe_key,
+                    )
             return item
         except IntegrityError:
             db.session.rollback()
@@ -256,7 +296,8 @@ class CropCalendarNotificationService:
             "planting_date", "crop_growth_stage", "available_water_capacity_mm_per_m"
         )):
             key = f"soil_inputs_missing:{today.year}"
-            if prefs["categories"]["soil_water_alert"]["in_app"] and cls._create_notification(
+            soil_channels = prefs["categories"]["soil_water_alert"]
+            if (soil_channels["in_app"] or soil_channels["push"]) and cls._create_notification(
                 user=user, profile=profile, notification_type="soil_water_alert",
                 dedupe_key=key,
                 title=("Complete farm inputs for soil-water estimates", "ለአፈር ውሃ ግምት የእርሻ መረጃን ያሟሉ"),
@@ -269,7 +310,8 @@ class CropCalendarNotificationService:
             due = scheduled - timedelta(days=prefs["reminder_days_before"])
             if due <= today <= scheduled and not cls.quiet_now(profile):
                 template = cls.REMINDERS[plan["activity_key"]]
-                if prefs["categories"]["crop_activity"]["in_app"] and cls._persist_activity(user, profile, plan, today=today):
+                crop_channels = prefs["categories"]["crop_activity"]
+                if (crop_channels["in_app"] or crop_channels["push"]) and cls._persist_activity(user, profile, plan, today=today):
                     created["crop_activity"] += 1
                 if prefs["categories"]["crop_activity"]["sms"] and profile.sms_opt_in:
                     lang_index = 1 if user.preferred_language == "am" else 0
@@ -285,24 +327,27 @@ class CropCalendarNotificationService:
         forecast = historical = current = None
         try:
             forecast = WeatherService.get_forecast_by_coordinates(lat, lon)
-        except Exception:
-            from flask import current_app
-            current_app.logger.exception("Crop reminder forecast unavailable (farmer_id=%s)", user.id)
+        except Exception as error:
+            _log_weather_unavailable("Open-Meteo forecast", user.id, error)
         end = today - timedelta(days=1)
         start = max(profile.planting_date or (end - timedelta(days=30)), end - timedelta(days=365))
         if start <= end:
             try:
                 historical = WeatherService.get_historical_water_weather(lat, lon, start.isoformat(), end.isoformat())
-            except Exception:
-                from flask import current_app
-                current_app.logger.exception("Crop reminder history unavailable (farmer_id=%s)", user.id)
+            except Exception as error:
+                _log_weather_unavailable("Open-Meteo historical", user.id, error)
         try:
             current = WeatherService.get_current_weather_by_coordinates(lat, lon)
-        except Exception:
-            from flask import current_app
-            current_app.logger.exception("Crop reminder current weather unavailable (farmer_id=%s)", user.id)
+        except Exception as error:
+            _log_weather_unavailable("OpenWeather current", user.id, error)
 
-        if current is None and prefs["categories"]["agricultural_advisory"]["in_app"]:
+        if (
+            (current is None or forecast is None or historical is None)
+            and (
+                prefs["categories"]["agricultural_advisory"]["in_app"]
+                or prefs["categories"]["agricultural_advisory"]["push"]
+            )
+        ):
             fallback = cls._create_notification(
                 user=user,
                 profile=profile,
@@ -310,8 +355,8 @@ class CropCalendarNotificationService:
                 dedupe_key=f"weather_unavailable:{today.isoformat()}",
                 title=("Live weather update unavailable", "የቀጥታ የአየር ሁኔታ መረጃ አልተገኘም"),
                 message=(
-                    "Live weather is temporarily unavailable. Check rainfall and soil moisture in your field before making irrigation or spraying decisions; this notice contains no live measurements.",
-                    "የቀጥታ የአየር ሁኔታ መረጃ ለጊዜው አልተገኘም። የመስኖ ወይም የርጭት ውሳኔ ከመወሰንዎ በፊት በእርሻዎ ያለውን ዝናብና የአፈር እርጥበት ይመልከቱ፤ ይህ ማስታወቂያ የቀጥታ መለኪያዎችን አያቀርብም።",
+                    "Live weather data (current conditions, forecast, or historical reanalysis) is temporarily unavailable. Guidance uses only available data and your saved crop profile and growth stage; it contains no live measurements. No weather or soil-moisture measurements are estimated; check field conditions before irrigation or spraying.",
+                    "አንዳንድ የአየር ሁኔታ መረጃ (የአሁኑ ሁኔታ፣ ትንበያ ወይም ታሪካዊ የአየር መረጃ) ለጊዜው አይገኝም። መመሪያው የሚገኘውን መረጃና ያስቀመጡትን የሰብል መገለጫ/የእድገት ደረጃ ብቻ ይጠቀማል። የአየር ሁኔታ ወይም የአፈር እርጥበት መለኪያ አይገመትም፤ መስኖ ወይም ርጭት ከማድረግዎ በፊት የእርሻውን ሁኔታ ይፈትሹ።",
                 ),
             )
             created["agricultural_advisory"] += int(fallback is not None)
@@ -327,7 +372,8 @@ class CropCalendarNotificationService:
             )
             soil = SoilWaterService.calculate(profile, historical, forecast)
             if soil.get("root_zone") is not None and profile.planting_date:
-                if prefs["categories"]["soil_water_alert"]["in_app"] and cls._create_notification(
+                soil_channels = prefs["categories"]["soil_water_alert"]
+                if (soil_channels["in_app"] or soil_channels["push"]) and cls._create_notification(
                     user=user, profile=profile, notification_type="soil_water_alert",
                     dedupe_key=f"soil_estimate_available:{profile.planting_date.isoformat()}",
                     title=("Estimated soil-water information is available", "የተገመተ የአፈር ውሃ መረጃ ይገኛል"),
@@ -349,7 +395,10 @@ class CropCalendarNotificationService:
             if template is None:
                 continue  # Ignore routine stage advice; only action-worthy advisories notify.
             category = template["type"]
-            if not prefs["categories"][category]["in_app"]:
+            if not (
+                prefs["categories"][category]["in_app"]
+                or prefs["categories"][category]["push"]
+            ):
                 continue
             period = today.isoformat()
             if identifier == "forecast_heavy_rain":
@@ -389,10 +438,15 @@ class CropCalendarNotificationService:
                 counts = cls.process_farmer(user, profile, include_weather=include_weather)
                 for key in ("crop_activity", "weather_alert", "soil_water_alert", "agricultural_advisory"):
                     totals[key] += counts[key]
-            except Exception:
+            except Exception as error:
                 db.session.rollback()
                 totals["failed"] += 1
-                current_app.logger.exception("Scheduled crop notifications failed (farmer_id=%s)", user.id)
+                current_app.logger.error(
+                    "Scheduled crop notifications failed (farmer_id=%s, error=%s: %s)",
+                    user.id,
+                    type(error).__name__,
+                    error,
+                )
         current_app.logger.info("Scheduled crop notifications completed: %s", totals)
         return totals
 

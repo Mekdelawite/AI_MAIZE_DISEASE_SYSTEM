@@ -14,7 +14,7 @@ from backend.app.services.crop_calendar_notification_service import CropCalendar
 
 def test_default_preferences_preserve_existing_delivery_categories():
     assert DEFAULT_NOTIFICATION_PREFERENCES["reminder_days_before"] == 0
-    assert all(channels == {"in_app": True, "sms": True} for channels in DEFAULT_NOTIFICATION_PREFERENCES["categories"].values())
+    assert all(channels == {"in_app": True, "sms": True, "push": False} for channels in DEFAULT_NOTIFICATION_PREFERENCES["categories"].values())
     assert DEFAULT_NOTIFICATION_PREFERENCES["timezone"] == "Africa/Addis_Ababa"
 
 
@@ -53,7 +53,7 @@ def test_invalid_saved_preferences_fall_back_without_affecting_scheduler():
     assert safe["reminder_days_before"] == 0
     assert safe["timezone"] == "Africa/Addis_Ababa"
     assert safe["quiet_hours"]["enabled"] is False
-    assert safe["categories"]["important_alerts"] == {"in_app": True, "sms": True}
+    assert safe["categories"]["important_alerts"] == {"in_app": True, "sms": True, "push": False}
 
 
 def _create_farmer(database, phone, *, role="farmer"):

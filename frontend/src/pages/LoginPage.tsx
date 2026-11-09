@@ -229,6 +229,11 @@ export const LoginPage: React.FC = () => {
             >
               {t('register')}
             </Link>
+            <div className="mt-3">
+              <Link to="/activate-extension-agent" className="font-semibold text-emerald-800 dark:text-emerald-400 hover:underline">
+                Activate an Extension Agent account
+              </Link>
+            </div>
           </div>
         </div>
 

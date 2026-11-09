@@ -27,12 +27,14 @@ import {
   Info,
   User,
   Users,
+  Wifi,
+  WifiOff,
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { FarmerNotification, notificationService } from '../../services/notificationService';
-import { syncService } from '../../services/syncService';
+import { offlineDiagnosisStore } from '../../services/offlineDiagnosisStore';
 import { MaizeLogo } from '../common/MaizeLogo';
 
 interface NavItem {
@@ -47,7 +49,16 @@ export const AppShell: React.FC<{
   actions?: React.ReactNode;
   children: React.ReactNode;
 }> = ({ title, subtitle, actions, children }) => {
-  const { t, language, setLanguage, theme, toggleTheme, isOnline } = useApp();
+  const {
+    t,
+    language,
+    setLanguage,
+    theme,
+    toggleTheme,
+    isOnline,
+    connectionStatus,
+    offlineSyncStatus,
+  } = useApp();
   const { user, effectiveRole, routePreviewRole, setRoutePreviewRole, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
@@ -57,13 +68,77 @@ export const AppShell: React.FC<{
   const [notificationError, setNotificationError] = useState(false);
   const [notificationActionError, setNotificationActionError] = useState(false);
   const [selectedNotificationId, setSelectedNotificationId] = useState<number | null>(null);
+  const [queuedCount, setQueuedCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
+  const connectionLabel = t({
+    checking: 'connectionCheckingStatus',
+    online: 'onlineStatus',
+    offline: 'offlineStatus',
+    unavailable: 'connectionUnavailableStatus',
+  }[connectionStatus]);
+  const syncStatusLabel = t({
+    idle: '',
+    syncing: 'syncInProgressStatus',
+    succeeded: 'syncCompleted',
+    failed: 'syncFailedWillRetry',
+  }[offlineSyncStatus]);
+  const connectionTone = isOnline
+    ? 'text-emerald-700 dark:text-emerald-300'
+    : connectionStatus === 'checking'
+      ? 'text-stone-600 dark:text-stone-300'
+      : 'text-amber-800 dark:text-amber-300';
 
-  const queuedCount = syncService.getQueue().filter((i) => i.status === 'queued' || i.status === 'failed').length;
+  React.useEffect(() => {
+    if (
+      effectiveRole !== 'farmer' ||
+      user?.role !== 'farmer' ||
+      user.id === undefined ||
+      user.id === null
+    ) {
+      setQueuedCount(0);
+      return;
+    }
+
+    let active = true;
+    const refreshQueuedCount = async () => {
+      try {
+        const pending = await offlineDiagnosisStore.getPending(user.id);
+        if (active) setQueuedCount(pending.length);
+      } catch (error) {
+        console.error('Could not load the farmer offline diagnosis count:', error);
+      }
+    };
+
+    void refreshQueuedCount();
+    window.addEventListener(
+      'maizecare:offline-diagnosis-queue-changed',
+      refreshQueuedCount,
+    );
+    window.addEventListener(
+      'maizecare:offline-diagnosis-sync-status',
+      refreshQueuedCount,
+    );
+    return () => {
+      active = false;
+      window.removeEventListener(
+        'maizecare:offline-diagnosis-queue-changed',
+        refreshQueuedCount,
+      );
+      window.removeEventListener(
+        'maizecare:offline-diagnosis-sync-status',
+        refreshQueuedCount,
+      );
+    };
+  }, [effectiveRole, user?.id, user?.role]);
 
   const refreshNotificationCount = React.useCallback(async () => {
     if (effectiveRole !== 'farmer') {
+      setNotificationCount(0);
+      return;
+    }
+    if (document.visibilityState !== 'visible') return;
+    if (!isOnline) {
       setNotificationCount(0);
       return;
     }
@@ -72,10 +147,16 @@ export const AppShell: React.FC<{
     } catch {
       setNotificationError(true);
     }
-  }, [effectiveRole]);
+  }, [effectiveRole, isOnline]);
 
   const loadNotifications = React.useCallback(async () => {
     if (effectiveRole !== 'farmer') return;
+    if (!isOnline) {
+      setNotifications([]);
+      setNotificationCount(0);
+      setNotificationError(true);
+      return;
+    }
     setNotificationsLoading(true);
     setNotificationError(false);
     try {
@@ -91,7 +172,7 @@ export const AppShell: React.FC<{
     } finally {
       setNotificationsLoading(false);
     }
-  }, [effectiveRole]);
+  }, [effectiveRole, isOnline]);
 
   React.useEffect(() => {
     if (effectiveRole !== 'farmer') {
@@ -100,15 +181,29 @@ export const AppShell: React.FC<{
       setNotificationPanelOpen(false);
       return;
     }
+    if (!isOnline) {
+      setNotificationCount(0);
+      if (connectionStatus !== 'checking') {
+        setNotifications([]);
+        setNotificationPanelOpen(false);
+        setNotificationError(true);
+      }
+      return;
+    }
     void refreshNotificationCount();
-    const timer = window.setInterval(() => void refreshNotificationCount(), 45_000);
+    const timer = window.setInterval(() => void refreshNotificationCount(), 60_000);
     const onFocus = () => void refreshNotificationCount();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refreshNotificationCount();
+    };
     window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       window.clearInterval(timer);
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [effectiveRole, refreshNotificationCount]);
+  }, [effectiveRole, isOnline, connectionStatus, refreshNotificationCount]);
 
   const toggleNotificationPanel = () => {
     const opening = !notificationPanelOpen;
@@ -191,6 +286,11 @@ export const AppShell: React.FC<{
 
   const selectedNotification = notifications.find((item) => item.id === selectedNotificationId) ?? null;
 
+  React.useEffect(() => {
+    setMobileMenuOpen(false);
+    setNotificationPanelOpen(false);
+  }, [location.pathname]);
+
   const farmerNav: NavItem[] = [
     { to: '/farmer/dashboard', labelKey: 'navDashboard', icon: LayoutDashboard },
     { to: '/farmer/diagnose', labelKey: 'navDiagnose', icon: ScanLine },
@@ -227,6 +327,13 @@ export const AppShell: React.FC<{
       : effectiveRole === 'extension_agent'
       ? extensionNav
       : farmerNav;
+  const mobileFarmerNav = [
+    { to: '/farmer/dashboard', labelKey: 'mobileNavHome', icon: LayoutDashboard, active: location.pathname === '/farmer/dashboard' },
+    { to: '/farmer/diagnose', labelKey: 'mobileNavDiagnose', icon: ScanLine, active: location.pathname.startsWith('/farmer/diagnose') },
+    { to: '/farmer/calendar', labelKey: 'mobileNavCalendar', icon: Calendar, active: location.pathname === '/farmer/calendar' },
+    { to: '', labelKey: 'mobileNavAlerts', icon: Bell, active: notificationPanelOpen },
+    { to: '/farmer/profile', labelKey: 'mobileNavProfile', icon: User, active: location.pathname === '/farmer/profile' },
+  ];
 
   const roleLabel = language === 'am'
     ? effectiveRole === 'admin'
@@ -264,7 +371,7 @@ export const AppShell: React.FC<{
   };
 
   return (
-    <div className="min-h-screen flex bg-[#FAF8F5] dark:bg-[#0C1310] text-stone-900 dark:text-stone-100">
+    <div className="min-h-screen flex bg-[#F7F8F4] dark:bg-[#0C1310] text-[#17231C] dark:text-stone-100">
       {/* Desktop Sidebar (260px) */}
       <aside className="hidden lg:flex lg:flex-col lg:w-[264px] lg:shrink-0 border-r border-stone-200 dark:border-stone-800 bg-white dark:bg-[#101814]">
         <div className="px-6 py-5 border-b border-stone-200 dark:border-stone-800 flex items-center gap-3">
@@ -352,17 +459,27 @@ export const AppShell: React.FC<{
             </button>
           </div>
 
-          <div className="flex items-center justify-between text-xs text-stone-500 dark:text-stone-400 px-1">
-            <span>{isOnline ? t('onlineStatus') : t('offlineStatus')}</span>
+          <div className="flex flex-wrap items-center justify-between gap-1 text-xs text-stone-500 dark:text-stone-400 px-1">
+            <span className={connectionTone}>{connectionLabel}</span>
+            {syncStatusLabel && (
+              <span className="basis-full text-stone-600 dark:text-stone-400">
+                {syncStatusLabel}
+              </span>
+            )}
             {queuedCount > 0 && (
               <Link
                 to="/farmer/diagnose"
                 className="font-mono tabular-nums text-amber-700 dark:text-amber-400 hover:underline"
               >
-                {queuedCount} queued
+                {queuedCount} {t('pendingDiagnosesLabel')}
               </Link>
             )}
           </div>
+          {!isOnline && connectionStatus !== 'checking' && (
+            <p className="px-1 text-[11px] leading-relaxed text-stone-500 dark:text-stone-400">
+              {t('offlineFeaturesUnavailable')}
+            </p>
+          )}
 
           <button
             type="button"
@@ -378,16 +495,24 @@ export const AppShell: React.FC<{
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Header */}
-        <header className="sticky top-0 z-20 flex items-center justify-between gap-4 px-6 py-3.5 border-b border-stone-200 dark:border-stone-800 bg-[#FAF8F5]/95 dark:bg-[#0C1310]/95 backdrop-blur-xs">
-          <div className="flex items-center gap-3 min-w-0">
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 -ml-2 rounded-lg text-stone-700 dark:text-stone-300 hover:bg-stone-200/60 dark:hover:bg-stone-800 cursor-pointer"
-              aria-label="Open navigation menu"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
+        <header className={`sticky top-0 z-20 flex min-h-16 items-center justify-between gap-2 px-4 py-2.5 sm:gap-4 sm:px-6 ${effectiveRole === 'farmer' ? 'flex-wrap border-b border-stone-200/70 bg-[#F7F8F4]/95 dark:border-stone-800 dark:bg-[#0C1310]/95' : 'border-b border-stone-200 bg-[#FAF8F5]/95 dark:border-stone-800 dark:bg-[#0C1310]/95'}`}>
+          {effectiveRole === 'farmer' && (
+            <Link to="/farmer/dashboard" className="flex min-w-0 items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 lg:hidden" aria-label={t('brandName')}>
+              <MaizeLogo className="h-8 w-8 shrink-0" />
+              <span className="truncate text-sm font-bold tracking-tight text-[#14532D] dark:text-emerald-200">{t('brandName')}</span>
+            </Link>
+          )}
+          <div className={`min-w-0 items-center gap-3 ${effectiveRole === 'farmer' ? 'hidden lg:flex' : 'flex'}`}>
+            {effectiveRole !== 'farmer' && (
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(true)}
+                className="lg:hidden p-2 -ml-2 rounded-lg text-stone-700 dark:text-stone-300 hover:bg-stone-200/60 dark:hover:bg-stone-800 cursor-pointer"
+                aria-label={language === 'am' ? 'የዳሰሳ ምናሌን ክፈት' : 'Open navigation menu'}
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            )}
             <div className="flex items-center gap-2 text-xs text-stone-500 dark:text-stone-400 truncate">
               <span className="font-medium text-stone-700 dark:text-stone-300">{roleLabel}</span>
               <span aria-hidden="true">/</span>
@@ -395,7 +520,7 @@ export const AppShell: React.FC<{
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-3">
             {effectiveRole === 'farmer' && (
               <div className="relative">
                 <button
@@ -407,7 +532,7 @@ export const AppShell: React.FC<{
                   aria-label={t('notificationsTitle')}
                   aria-expanded={notificationPanelOpen}
                   aria-controls="farmer-notification-center"
-                  className="relative rounded-xl border border-stone-200 bg-white p-2.5 text-stone-700 shadow-sm transition-colors hover:border-emerald-300 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-200 dark:hover:border-emerald-800 dark:hover:bg-emerald-950/40 dark:focus-visible:ring-emerald-400"
+                  className="relative inline-flex h-11 w-11 items-center justify-center rounded-full text-stone-700 transition-colors hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 dark:text-stone-200 dark:hover:bg-emerald-950/40 dark:focus-visible:ring-emerald-400 lg:h-10 lg:w-10 lg:rounded-xl lg:border lg:border-stone-200 lg:bg-white lg:shadow-sm dark:lg:border-stone-700 dark:lg:bg-stone-900"
                 >
                   <Bell className="h-4 w-4" />
                   {notificationCount > 0 && (
@@ -418,7 +543,7 @@ export const AppShell: React.FC<{
                 </button>
 
                 {notificationPanelOpen && (
-                  <section id="farmer-notification-center" aria-label={t('notificationsTitle')} onClick={(event) => event.stopPropagation()} className="absolute right-0 top-[calc(100%+0.75rem)] z-50 flex max-h-[min(78vh,720px)] w-[min(92vw,460px)] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xl shadow-stone-900/15 ring-1 ring-black/5 dark:border-stone-800 dark:bg-[#101814] dark:shadow-black/40 dark:ring-white/5">
+                  <section id="farmer-notification-center" aria-label={t('notificationsTitle')} onClick={(event) => event.stopPropagation()} className="fixed inset-x-2 top-[4.5rem] bottom-[calc(5rem+env(safe-area-inset-bottom))] z-50 mx-auto flex max-h-[min(78vh,720px)] w-auto max-w-[460px] flex-col overflow-hidden rounded-3xl border border-stone-200/80 bg-white shadow-2xl shadow-stone-900/15 ring-1 ring-black/5 dark:border-stone-800 dark:bg-[#101814] dark:shadow-black/40 dark:ring-white/5 lg:absolute lg:inset-x-auto lg:bottom-auto lg:right-0 lg:top-[calc(100%+0.75rem)] lg:w-[min(92vw,460px)]">
                     <div className="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-stone-50/80 px-4 py-3.5 dark:border-stone-800 dark:bg-stone-900/60 sm:px-5">
                       {selectedNotification ? (
                         <button type="button" onClick={() => setSelectedNotificationId(null)} className="inline-flex items-center gap-2 rounded-md text-sm font-semibold text-stone-900 hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 dark:text-stone-100 dark:hover:text-emerald-300" aria-label={t('notificationsBack')}>
@@ -431,11 +556,16 @@ export const AppShell: React.FC<{
                           <div className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">{notificationCount > 0 ? `${notificationCount} ${t('notificationsUnread').toLowerCase()}` : t('notificationsRead')}</div>
                         </div>
                       )}
-                      {!selectedNotification && notificationCount > 0 && (
-                        <button type="button" onClick={handleMarkAllRead} className="shrink-0 rounded-lg px-2.5 py-2 text-xs font-semibold text-emerald-800 transition-colors hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-950/60 dark:focus-visible:ring-emerald-400">
-                          {t('notificationsMarkAllRead')}
+                      <div className="flex shrink-0 items-center gap-1">
+                        {!selectedNotification && notificationCount > 0 && (
+                          <button type="button" onClick={handleMarkAllRead} className="rounded-lg px-2.5 py-2 text-xs font-semibold text-emerald-800 transition-colors hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-950/60 dark:focus-visible:ring-emerald-400">
+                            {t('notificationsMarkAllRead')}
+                          </button>
+                        )}
+                        <button type="button" onClick={() => setNotificationPanelOpen(false)} className="inline-flex h-10 w-10 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 dark:hover:bg-stone-800 dark:hover:text-white" aria-label={language === 'am' ? 'ማሳወቂያዎችን ዝጋ' : 'Close notifications'}>
+                          <X className="h-4 w-4" aria-hidden="true" />
                         </button>
-                      )}
+                      </div>
                     </div>
                     {notificationError && <div role="alert" className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100"><span>{t('notificationsLoadError')}</span><button type="button" disabled={!isOnline} onClick={() => void loadNotifications()} className="shrink-0 font-semibold underline disabled:opacity-50">{t('notificationsRetry')}</button></div>}
                     {notificationActionError && <div role="alert" className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-900 dark:border-red-900 dark:bg-red-950/30 dark:text-red-100">{t('notificationsReadError')}</div>}
@@ -520,9 +650,64 @@ export const AppShell: React.FC<{
                 </button>
               </div>
             )}
-            {actions}
+            {effectiveRole === 'farmer' && !actions && (
+              <Link
+                to="/farmer/profile"
+                aria-label={t('navProfile')}
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[#14532D] transition-colors hover:bg-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 dark:bg-emerald-950 dark:text-emerald-200 dark:hover:bg-emerald-900 lg:hidden"
+              >
+                <User className="h-5 w-5" aria-hidden="true" />
+              </Link>
+            )}
+            {effectiveRole !== 'farmer' && actions}
           </div>
+          {effectiveRole === 'farmer' && actions && (
+            <div className="w-full min-w-0 basis-full justify-end sm:flex sm:w-auto sm:basis-auto sm:flex-1 lg:flex-none">
+              {actions}
+            </div>
+          )}
         </header>
+
+        {effectiveRole === 'farmer' && (
+          <div
+            className="border-b border-stone-200/70 bg-white/80 px-4 py-2.5 text-xs dark:border-stone-800 dark:bg-[#101814]/80 sm:px-6 lg:hidden"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-1">
+              <span className={`inline-flex items-center gap-1.5 font-medium ${connectionTone}`}>
+                {offlineSyncStatus === 'syncing' ? (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                ) : isOnline ? (
+                  <Wifi className="h-3.5 w-3.5" aria-hidden="true" />
+                ) : (
+                  <WifiOff className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+                {connectionLabel}
+              </span>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                {syncStatusLabel && (
+                  <span className="text-stone-600 dark:text-stone-300">
+                    {syncStatusLabel}
+                  </span>
+                )}
+                {queuedCount > 0 && (
+                  <Link
+                    to="/farmer/diagnose"
+                    className="font-medium text-amber-800 hover:underline dark:text-amber-300"
+                  >
+                    {queuedCount} {t('pendingDiagnosesLabel')}
+                  </Link>
+                )}
+              </div>
+              {!isOnline && connectionStatus !== 'checking' && (
+                <p className="basis-full text-stone-600 dark:text-stone-400">
+                  {t('offlineFeaturesUnavailable')}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Mobile Drawer */}
         {mobileMenuOpen && (
@@ -600,10 +785,10 @@ export const AppShell: React.FC<{
         )}
 
         {/* Page Viewport */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <main className={`flex-1 min-w-0 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-8 ${effectiveRole === 'farmer' ? 'pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-8' : 'pb-5 sm:pb-8'}`}>
+          <div className="mb-6 flex min-w-0 flex-col gap-3 sm:mb-8 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100 font-display">
+              <h1 className="break-words text-2xl font-bold tracking-tight text-[#17231C] dark:text-stone-100 font-display sm:text-3xl">
                 {pageTitle}
               </h1>
               {subtitle && (
@@ -618,7 +803,7 @@ export const AppShell: React.FC<{
                 className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-amber-900 dark:text-amber-200 bg-amber-100/80 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 rounded-lg whitespace-nowrap shrink-0"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span className="tabular-nums">{queuedCount} offline item(s) ready to sync</span>
+                <span className="tabular-nums">{queuedCount} {t('offlineItemsAwaitingSync')}</span>
               </Link>
             )}
           </div>
@@ -626,6 +811,54 @@ export const AppShell: React.FC<{
           {children}
         </main>
       </div>
+      {effectiveRole === 'farmer' && (
+        <nav
+          aria-label={language === 'am' ? 'የአርሶ አደር ዋና ዳሰሳ' : 'Farmer primary navigation'}
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200/80 bg-white/95 px-1 pt-1.5 pb-[max(env(safe-area-inset-bottom),0.35rem)] shadow-[0_-8px_24px_rgba(28,25,23,0.08)] backdrop-blur-xl dark:border-stone-800 dark:bg-[#101814]/95 lg:hidden"
+        >
+          <div className="mx-auto grid max-w-xl grid-cols-5 gap-1">
+            {mobileFarmerNav.map(({ to, labelKey, icon: Icon, active }) => (
+              to ? (
+                <NavLink
+                  key={to}
+                  to={to}
+                  aria-label={t(labelKey)}
+                  className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 dark:focus-visible:ring-emerald-400 ${
+                    active
+                      ? 'bg-emerald-50 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200'
+                      : 'text-stone-500 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800'
+                  }`}
+                >
+                  <Icon className="h-5 w-5" aria-hidden="true" />
+                  <span className="max-w-full truncate">{t(labelKey)}</span>
+                </NavLink>
+              ) : (
+                <button
+                  key={labelKey}
+                  type="button"
+                  onClick={toggleNotificationPanel}
+                  aria-label={t(labelKey)}
+                  aria-expanded={notificationPanelOpen}
+                  aria-controls="farmer-notification-center"
+                  className={`relative flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 dark:focus-visible:ring-emerald-400 ${
+                    active
+                      ? 'bg-emerald-50 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200'
+                      : 'text-stone-500 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800'
+                  }`}
+                >
+                  <Icon className="h-5 w-5" aria-hidden="true" />
+                  <span className="max-w-full truncate">{t(labelKey)}</span>
+                  {notificationCount > 0 && (
+                    <span className="absolute right-2 top-0.5 min-w-4 rounded-full bg-rose-600 px-1 text-[9px] leading-4 text-white">
+                      {notificationCount > 99 ? '99+' : notificationCount}
+                    </span>
+                  )}
+                </button>
+              )
+            ))}
+          </div>
+        </nav>
+      )}
     </div>
   );
 };

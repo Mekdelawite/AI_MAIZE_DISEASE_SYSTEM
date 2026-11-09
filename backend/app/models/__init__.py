@@ -19,6 +19,10 @@ from backend.app.models.discussion_post_like import DiscussionPostLike
 from backend.app.models.offline_sync_record import OfflineSyncRecord
 from backend.app.models.pending_registration import PendingRegistration
 from backend.app.models.farmer_notification import FarmerNotification
+from backend.app.models.farmer_push import FarmerPushDelivery, FarmerPushSubscription
+from backend.app.models.administrative_division import GeographyRegion, GeographyZone, GeographyWoreda
+from backend.app.models.extension_agent_activation import ExtensionAgentActivation
+from backend.app.models.extension_agent_assignment_history import ExtensionAgentAssignmentHistory
 __all__ = [
     "User",
     "DiagnosisRecord",
@@ -35,4 +39,11 @@ __all__ = [
     "OfflineSyncRecord",
     "PendingRegistration",
     "FarmerNotification",
+    "FarmerPushSubscription",
+    "FarmerPushDelivery",
+    "GeographyRegion",
+    "GeographyZone",
+    "GeographyWoreda",
+    "ExtensionAgentActivation",
+    "ExtensionAgentAssignmentHistory",
 ]

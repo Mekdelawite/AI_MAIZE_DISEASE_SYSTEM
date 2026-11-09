@@ -4,74 +4,39 @@ import type { LocalDiagnosisResult } from './localDiagnosisService';
 const DB_NAME = 'maizecare-offline-db';
 const DB_VERSION = 2;
 const STORE_NAME = 'diagnoses';
-const MAX_IMAGE_SIZE = 450 * 1024;
+const MAX_SYNC_ATTEMPTS = 3;
+const SYNC_RETRY_COOLDOWN_MS = 60 * 60 * 1000;
+const QUEUE_CHANGED_EVENT = 'maizecare:offline-diagnosis-queue-changed';
+
+function notifyQueueChanged(): void {
+  window.dispatchEvent(new Event(QUEUE_CHANGED_EVENT));
+}
 
 export interface OfflineDiagnosisRecord {
   operation_id: string;
   user_id?: string | number;
+  language: 'en' | 'am';
+  explain: boolean;
+  file_name: string;
+  file_type: string;
   className: LocalDiagnosisResult['className'];
   confidence: number;
   probabilities: number[];
   created_at: string;
   sync_status: 'pending' | 'synced';
+  sync_attempts?: number;
+  next_retry_at?: string;
+  synced_at?: string;
+  server_result?: unknown;
+  sync_error?: string;
   image: Blob;
 }
 
-async function compressImage(image: Blob): Promise<Blob> {
-  if (image.size <= MAX_IMAGE_SIZE) {
-    return image;
+export function createOfflineDiagnosisOperationId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `diagnosis_${crypto.randomUUID()}`;
   }
-
-  const bitmap = await createImageBitmap(image);
-
-  try {
-    let scale = Math.min(
-      1,
-      1600 / Math.max(bitmap.width, bitmap.height),
-    );
-
-    for (let resizeAttempt = 0; resizeAttempt < 8; resizeAttempt++) {
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-
-      const context = canvas.getContext('2d');
-
-      if (!context) {
-        throw new Error('Could not prepare the diagnosis image.');
-      }
-
-      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-
-      for (const quality of [0.85, 0.75, 0.65, 0.55, 0.45, 0.35]) {
-        const compressed = await new Promise<Blob>((resolve, reject) => {
-          canvas.toBlob(
-            (blob) => {
-              if (blob) {
-                resolve(blob);
-              } else {
-                reject(new Error('Could not compress the diagnosis image.'));
-              }
-            },
-            'image/jpeg',
-            quality,
-          );
-        });
-
-        if (compressed.size <= MAX_IMAGE_SIZE) {
-          return compressed;
-        }
-      }
-
-      scale *= 0.8;
-    }
-
-    throw new Error(
-      'Could not reduce the image below 450 KB. Please choose a smaller image.',
-    );
-  } finally {
-    bitmap.close();
-  }
+  return `diagnosis_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
 }
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -113,6 +78,12 @@ export const offlineDiagnosisStore = {
     result: LocalDiagnosisResult,
     image: File,
     userId: string | number,
+    metadata: {
+      operationId?: string;
+      language?: 'en' | 'am';
+      explain?: boolean;
+      createdAt?: string;
+    } = {},
   ): Promise<OfflineDiagnosisRecord> {
     if (
       !(
@@ -126,17 +97,20 @@ export const offlineDiagnosisStore = {
     const db = await openDatabase();
 
     try {
-      const compressedImage = await compressImage(image);
-
       const record: OfflineDiagnosisRecord = {
-        operation_id: crypto.randomUUID(),
+        operation_id: metadata.operationId ?? createOfflineDiagnosisOperationId(),
         user_id: userId,
+        language: metadata.language ?? 'en',
+        explain: metadata.explain ?? false,
+        file_name: image.name,
+        file_type: image.type || 'image/jpeg',
         className: result.className,
         confidence: result.confidence,
         probabilities: [...result.probabilities],
-        created_at: new Date().toISOString(),
+        created_at: metadata.createdAt ?? new Date().toISOString(),
         sync_status: 'pending',
-        image: compressedImage,
+        sync_attempts: 0,
+        image,
       };
 
       await new Promise<void>((resolve, reject) => {
@@ -151,6 +125,7 @@ export const offlineDiagnosisStore = {
           reject(transaction.error ?? new Error('Saving diagnosis was aborted.'));
       });
 
+      notifyQueueChanged();
       return record;
     } finally {
       db.close();
@@ -193,7 +168,23 @@ export const offlineDiagnosisStore = {
     return records.filter((record) => record.sync_status === 'pending');
   },
 
-  async markSynced(operationId: string): Promise<void> {
+  async getReadyToSync(userId: string | number): Promise<OfflineDiagnosisRecord[]> {
+    const now = Date.now();
+    const pending = await this.getPending(userId);
+    return pending.filter(
+      (record) =>
+        record.sync_attempts !== undefined &&
+        record.sync_attempts >= MAX_SYNC_ATTEMPTS
+          ? Boolean(
+              record.next_retry_at &&
+                new Date(record.next_retry_at).getTime() <= now,
+            )
+          : !record.next_retry_at ||
+            new Date(record.next_retry_at).getTime() <= now,
+    );
+  },
+
+  async markSynced(operationId: string, serverResult?: unknown): Promise<void> {
     const db = await openDatabase();
 
     try {
@@ -213,6 +204,10 @@ export const offlineDiagnosisStore = {
           store.put({
             ...request.result,
             sync_status: 'synced',
+            synced_at: new Date().toISOString(),
+            server_result: serverResult,
+            sync_error: undefined,
+            next_retry_at: undefined,
           });
         };
 
@@ -225,6 +220,53 @@ export const offlineDiagnosisStore = {
         transaction.onabort = () =>
           reject(transaction.error ?? new Error('Diagnosis update was aborted.'));
       });
+      notifyQueueChanged();
+    } finally {
+      db.close();
+    }
+  },
+
+  async recordSyncFailure(operationId: string, message: string): Promise<void> {
+    const db = await openDatabase();
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction(STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.get(operationId);
+
+        request.onsuccess = () => {
+          if (!request.result) {
+            reject(new Error(`Offline diagnosis ${operationId} was not found.`));
+            return;
+          }
+
+          const attempts = Math.min(
+            (request.result.sync_attempts ?? 0) + 1,
+            MAX_SYNC_ATTEMPTS,
+          );
+          const retryDelay =
+            attempts >= MAX_SYNC_ATTEMPTS
+              ? SYNC_RETRY_COOLDOWN_MS
+              : 60_000 * 2 ** (attempts - 1);
+
+          store.put({
+            ...request.result,
+            sync_error: message,
+            sync_attempts: attempts,
+            next_retry_at: new Date(Date.now() + retryDelay).toISOString(),
+          });
+        };
+
+        request.onerror = () =>
+          reject(request.error ?? new Error('Could not find diagnosis.'));
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () =>
+          reject(transaction.error ?? new Error('Could not update diagnosis.'));
+        transaction.onabort = () =>
+          reject(transaction.error ?? new Error('Diagnosis update was aborted.'));
+      });
+      notifyQueueChanged();
     } finally {
       db.close();
     }

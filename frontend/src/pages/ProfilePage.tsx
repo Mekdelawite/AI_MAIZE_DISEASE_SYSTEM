@@ -1,22 +1,55 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Edit3, MapPin, RefreshCw, WifiOff } from 'lucide-react';
+import { Bell, BellOff, CheckCircle2, Edit3, Loader2, MapPin, RefreshCw, WifiOff } from 'lucide-react';
 import { ErrorState, LoadingSkeleton } from '../components/common/FeedbackStates';
 import { AppShell } from '../components/layout/AppShell';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
+import { notificationService } from '../services/notificationService';
 import { profileService } from '../services/profileService';
 import { FarmerNotificationPreferences, ProfileResponseData } from '../types/api';
 
 const PROFILE_CACHE_PREFIX = 'maizecare_profile_v1_';
 const DEFAULT_NOTIFICATION_PREFERENCES: FarmerNotificationPreferences = {
   categories: {
-    crop_activity: { in_app: true, sms: true }, weather_alert: { in_app: true, sms: true },
-    soil_water_alert: { in_app: true, sms: true }, agricultural_advisory: { in_app: true, sms: true },
-    important_alerts: { in_app: true, sms: true },
+    crop_activity: { in_app: true, sms: true, push: false }, weather_alert: { in_app: true, sms: true, push: false },
+    soil_water_alert: { in_app: true, sms: true, push: false }, agricultural_advisory: { in_app: true, sms: true, push: false },
+    important_alerts: { in_app: true, sms: true, push: false },
   },
   reminder_days_before: 0, quiet_hours: { enabled: false, start: '21:00', end: '07:00' }, timezone: 'Africa/Addis_Ababa',
 };
 const notificationCategories = ['crop_activity', 'weather_alert', 'soil_water_alert', 'agricultural_advisory', 'important_alerts'] as const;
+
+function decodeVapidKey(value: string): ArrayBuffer {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const decoded = window.atob(normalized + '='.repeat((4 - normalized.length % 4) % 4));
+  const buffer = new ArrayBuffer(decoded.length);
+  new Uint8Array(buffer).set(
+    Uint8Array.from(decoded, (character) => character.charCodeAt(0)),
+  );
+  return buffer;
+}
+
+function normalizeNotificationPreferences(
+  value?: FarmerNotificationPreferences,
+): FarmerNotificationPreferences {
+  return {
+    ...DEFAULT_NOTIFICATION_PREFERENCES,
+    ...value,
+    categories: Object.fromEntries(
+      notificationCategories.map((category) => [
+        category,
+        {
+          ...DEFAULT_NOTIFICATION_PREFERENCES.categories[category],
+          ...(value?.categories?.[category] ?? {}),
+        },
+      ]),
+    ) as FarmerNotificationPreferences['categories'],
+    quiet_hours: {
+      ...DEFAULT_NOTIFICATION_PREFERENCES.quiet_hours,
+      ...value?.quiet_hours,
+    },
+  };
+}
 
 function readCachedProfile(userId: string | number | undefined): ProfileResponseData | null {
   if (userId === undefined) return null;
@@ -64,8 +97,16 @@ export const ProfilePage: React.FC = () => {
   const [kebele, setKebele] = useState('');
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
+  const [gpsStatus, setGpsStatus] = useState<
+    'idle' | 'detecting' | 'detected' | 'denied' | 'unavailable' | 'timeout' | 'error' | 'unsupported' | 'insecure'
+  >('idle');
   const [smsOptIn, setSmsOptIn] = useState(false);
   const [notificationPreferences, setNotificationPreferences] = useState<FarmerNotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
+  const [pushStatus, setPushStatus] = useState<
+    'loading' | 'enabled' | 'disabled' | 'unsupported' | 'denied' | 'unconfigured' | 'error'
+  >('loading');
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
 
   const syncFormFromResponse = (res: ProfileResponseData) => {
     const u = res.user;
@@ -79,8 +120,9 @@ export const ProfilePage: React.FC = () => {
     setKebele(fp?.kebele || u?.kebele || '');
     setLatitude(fp?.latitude !== undefined && fp?.latitude !== null ? String(fp.latitude) : '');
     setLongitude(fp?.longitude !== undefined && fp?.longitude !== null ? String(fp.longitude) : '');
+    setGpsStatus('idle');
     setSmsOptIn(Boolean(fp?.sms_opt_in));
-    setNotificationPreferences(fp?.notification_preferences || DEFAULT_NOTIFICATION_PREFERENCES);
+    setNotificationPreferences(normalizeNotificationPreferences(fp?.notification_preferences));
   };
 
   const loadProfile = useCallback(async () => {
@@ -149,8 +191,183 @@ export const ProfilePage: React.FC = () => {
     if (!isOnline) setEditing(false);
   }, [isOnline]);
 
+  useEffect(() => {
+    let active = true;
+    if (
+      user?.role !== 'farmer' ||
+      !('serviceWorker' in navigator) ||
+      !('PushManager' in window) ||
+      !('Notification' in window) ||
+      !window.isSecureContext
+    ) {
+      setPushStatus('unsupported');
+      return;
+    }
+
+    void (async () => {
+      try {
+        const [config, registration] = await Promise.all([
+          notificationService.getPushConfig(),
+          navigator.serviceWorker.getRegistration(),
+        ]);
+        if (!active) return;
+        if (!config.enabled || !config.public_key) {
+          setPushStatus('unconfigured');
+          return;
+        }
+        if (!registration) {
+          setPushStatus('disabled');
+          return;
+        }
+        const subscription = await registration.pushManager.getSubscription();
+        if (!active) return;
+        setPushStatus(
+          subscription
+            ? 'enabled'
+            : Notification.permission === 'denied'
+              ? 'denied'
+              : 'disabled',
+        );
+      } catch (error) {
+        console.error('Could not inspect farmer push-notification status:', error);
+        if (active) {
+          setPushStatus('error');
+          setPushError(t('pushStatusError'));
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [user?.role, t]);
+
+  const savePushPreferences = async (enabled: boolean) => {
+    const categories = Object.fromEntries(
+      notificationCategories.map((category) => [
+        category,
+        { ...notificationPreferences.categories[category], push: enabled },
+      ]),
+    ) as FarmerNotificationPreferences['categories'];
+    const updatedPreferences = { ...notificationPreferences, categories };
+    const updatedProfile = await profileService.updateProfile({
+      notification_preferences: updatedPreferences,
+    });
+    setNotificationPreferences(updatedPreferences);
+    setData((current) => current
+      ? {
+          ...current,
+          farmer_profile: {
+            ...(current.farmer_profile ?? {}),
+            notification_preferences: updatedPreferences,
+          },
+        }
+      : updatedProfile);
+  };
+
+  const handleEnablePush = async () => {
+    setPushBusy(true);
+    setPushError(null);
+    let subscription: PushSubscription | null = null;
+    try {
+      if (
+        !('serviceWorker' in navigator) ||
+        !('PushManager' in window) ||
+        !('Notification' in window) ||
+        !window.isSecureContext
+      ) {
+        setPushStatus('unsupported');
+        return;
+      }
+
+      const config = await notificationService.getPushConfig();
+      if (!config.enabled || !config.public_key) {
+        setPushStatus('unconfigured');
+        return;
+      }
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (!registration) {
+        setPushStatus('unsupported');
+        setPushError(t('pushServiceWorkerMissing'));
+        return;
+      }
+
+      const permission = Notification.permission === 'granted'
+        ? 'granted'
+        : await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setPushStatus(permission === 'denied' ? 'denied' : 'disabled');
+        return;
+      }
+
+      subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: decodeVapidKey(config.public_key),
+        });
+      }
+      await notificationService.savePushSubscription(subscription.toJSON());
+      await savePushPreferences(true);
+      setPushStatus('enabled');
+    } catch (error) {
+      if (subscription) {
+        try {
+          await notificationService.removePushSubscription(subscription.endpoint);
+        } catch (cleanupError) {
+          console.error('Could not remove an incomplete server push subscription:', cleanupError);
+        }
+        try {
+          await subscription.unsubscribe();
+        } catch (cleanupError) {
+          console.error('Could not unsubscribe an incomplete browser push subscription:', cleanupError);
+        }
+      }
+      console.error('Could not enable farmer push notifications:', error);
+      setPushStatus('error');
+      setPushError(error instanceof Error ? error.message : t('pushStatusError'));
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const handleDisablePush = async () => {
+    setPushBusy(true);
+    setPushError(null);
+    try {
+      await savePushPreferences(false);
+      const registration = await navigator.serviceWorker.getRegistration();
+      const subscription = await registration?.pushManager.getSubscription();
+      if (subscription) {
+        let removalError: unknown;
+        try {
+          await notificationService.removePushSubscription(subscription.endpoint);
+        } catch (error) {
+          removalError = error;
+        }
+        const unsubscribed = await subscription.unsubscribe();
+        if (removalError) throw removalError;
+        if (!unsubscribed) throw new Error(t('pushUnsubscribeFailed'));
+      }
+      setPushStatus('disabled');
+    } catch (error) {
+      console.error('Could not disable farmer push notifications:', error);
+      setPushStatus('error');
+      setPushError(error instanceof Error ? error.message : t('pushStatusError'));
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
   const handleUseGps = () => {
+    if (!window.isSecureContext) {
+      setGpsStatus('insecure');
+      notify(t('profileGpsSecureContext'), 'warning');
+      return;
+    }
+
     if (!navigator.geolocation) {
+      setGpsStatus('unsupported');
       notify(t('profileGpsUnsupported'), 'warning');
       return;
     }
@@ -161,20 +378,29 @@ export const ProfilePage: React.FC = () => {
       data.farmer_profile.longitude !== null;
     if (hasSavedGpsLocation && !window.confirm(t('profileGpsReplaceConfirm'))) return;
 
+    setGpsStatus('detecting');
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLatitude(pos.coords.latitude.toFixed(6));
         setLongitude(pos.coords.longitude.toFixed(6));
+        setGpsStatus('detected');
         notify(t('profileGpsCaptured'), 'info');
       },
       (error) => {
-        const message = error.code === 1
-          ? t('profileGpsDenied')
+        const status = error.code === 1
+          ? 'denied'
           : error.code === 2
-            ? t('profileGpsUnavailable')
+            ? 'unavailable'
             : error.code === 3
-              ? t('profileGpsTimeout')
-              : t('profileGpsError');
+              ? 'timeout'
+              : 'error';
+        setGpsStatus(status);
+        const message = t({
+          denied: 'profileGpsDenied',
+          unavailable: 'profileGpsUnavailable',
+          timeout: 'profileGpsTimeout',
+          error: 'profileGpsError',
+        }[status]);
         notify(message, 'warning');
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
@@ -231,6 +457,28 @@ export const ProfilePage: React.FC = () => {
     }
   };
 
+  const savedLatitude = data?.farmer_profile?.latitude;
+  const savedLongitude = data?.farmer_profile?.longitude;
+  const hasSavedCoordinates = savedLatitude != null && savedLongitude != null;
+  const coordinatesChanged =
+    latitude !== (savedLatitude == null ? '' : String(savedLatitude)) ||
+    longitude !== (savedLongitude == null ? '' : String(savedLongitude));
+  const gpsStatusKey = gpsStatus === 'detecting'
+    ? 'profileGpsDetecting'
+    : gpsStatus === 'denied'
+      ? 'profileGpsDenied'
+      : gpsStatus === 'unavailable'
+        ? 'profileGpsUnavailable'
+        : gpsStatus === 'timeout'
+          ? 'profileGpsTimeout'
+          : gpsStatus === 'unsupported'
+            ? 'profileGpsUnsupported'
+            : gpsStatus === 'insecure'
+              ? 'profileGpsSecureContext'
+              : gpsStatus === 'error'
+                ? 'profileGpsError'
+                : null;
+
   return (
     <AppShell
       title={t('navProfile')}
@@ -240,7 +488,7 @@ export const ProfilePage: React.FC = () => {
           <button
             type="button"
             onClick={loadProfile}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-stone-700 dark:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-medium text-stone-700 transition hover:bg-stone-100 dark:text-stone-200 dark:hover:bg-stone-800 sm:px-3"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span>{t('refresh')}</span>
@@ -249,7 +497,7 @@ export const ProfilePage: React.FC = () => {
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-900 hover:bg-emerald-800 rounded-lg cursor-pointer"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[#14532D] px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-[#0f4324]"
             >
               <Edit3 className="w-3.5 h-3.5" />
               <span>Edit Profile</span>
@@ -267,7 +515,21 @@ export const ProfilePage: React.FC = () => {
           onRetry={loadProfile}
         />
       ) : (
-        <div className="max-w-3xl space-y-6">
+        <div className="w-full max-w-3xl space-y-6">
+          <section className="farmer-card flex min-w-0 items-center gap-4 p-5 sm:p-6">
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-xl font-bold text-[#14532D] dark:bg-emerald-950 dark:text-emerald-200">
+              {(fullName || user?.full_name || user?.name || 'F').trim().charAt(0).toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              <p className="break-words text-lg font-bold text-stone-900 dark:text-stone-100">
+                {fullName || user?.full_name || user?.name || t('navProfile')}
+              </p>
+              <p className="mt-1 break-words text-sm text-stone-500 dark:text-stone-400">
+                {[region || data.farmer_profile?.region, woreda || data.farmer_profile?.woreda].filter(Boolean).join(' · ') || t('regionLabel')}
+              </p>
+            </div>
+          </section>
+
           {profileNotice && (
             <div className="rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/20 p-4 flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200" role="status">
               <WifiOff className="w-4 h-4 shrink-0" />
@@ -290,7 +552,7 @@ export const ProfilePage: React.FC = () => {
 
           <form
             onSubmit={handleSave}
-            className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-6 sm:p-8 space-y-6"
+            className="farmer-form farmer-card min-w-0 space-y-6 p-4 sm:p-7"
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
@@ -391,10 +653,14 @@ export const ProfilePage: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleUseGps}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-emerald-800 dark:text-emerald-400 hover:underline cursor-pointer"
+                    disabled={saving || gpsStatus === 'detecting'}
+                    aria-busy={gpsStatus === 'detecting'}
+                    className="inline-flex min-h-11 items-center gap-1 text-xs font-medium text-emerald-800 dark:text-emerald-400 hover:underline disabled:cursor-wait disabled:opacity-60"
                   >
-                    <MapPin className="w-3.5 h-3.5" />
-                    <span>{t('profileCaptureGps')}</span>
+                    {gpsStatus === 'detecting'
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <MapPin className="w-3.5 h-3.5" />}
+                    <span>{t(gpsStatus === 'detecting' ? 'profileGpsDetecting' : 'profileCaptureGps')}</span>
                   </button>
                 )}
               </div>
@@ -429,6 +695,18 @@ export const ProfilePage: React.FC = () => {
                   />
                 </div>
               </div>
+              <p className="mt-3 text-xs text-stone-600 dark:text-stone-400" role="status" aria-live="polite">
+                {coordinatesChanged
+                  ? t(gpsStatus === 'detected' ? 'profileGpsCaptured' : 'profileGpsManualUnsaved')
+                  : hasSavedCoordinates
+                    ? t('profileGpsSaved')
+                    : t('profileGpsNotSet')}
+              </p>
+              {gpsStatusKey && gpsStatus !== 'detecting' && (
+                <p className="mt-2 text-xs text-amber-800 dark:text-amber-300" role="status" aria-live="polite">
+                  {t(gpsStatusKey)}
+                </p>
+              )}
             </div>
 
             <div className="pt-4 border-t border-stone-200 dark:border-stone-800">
@@ -449,16 +727,60 @@ export const ProfilePage: React.FC = () => {
                 <h2 id="notification-preferences-title" className="text-sm font-semibold text-stone-900 dark:text-stone-100">{t('notificationPreferencesTitle')}</h2>
                 <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">{t('notificationPreferencesHelp')}</p>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead><tr className="text-left text-stone-500"><th className="py-2 pr-3">{t('notificationCategory')}</th><th className="px-2 py-2">{t('notificationInApp')}</th><th className="px-2 py-2">{t('notificationSms')}</th></tr></thead>
+              <div className="rounded-xl border border-stone-200 bg-stone-50 p-4 dark:border-stone-800 dark:bg-stone-900/40">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    {pushStatus === 'enabled'
+                      ? <Bell className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
+                      : <BellOff className="mt-0.5 h-5 w-5 shrink-0 text-stone-500" aria-hidden="true" />}
+                    <div>
+                      <p className="text-sm font-semibold text-stone-900 dark:text-stone-100">{t('pushSettingsTitle')}</p>
+                      <p className="mt-1 text-xs text-stone-600 dark:text-stone-400">{t('pushBenefit')}</p>
+                      <p className="mt-2 text-xs font-medium text-stone-700 dark:text-stone-300" role="status" aria-live="polite">
+                        {t({
+                          loading: 'pushStatusLoading',
+                          enabled: 'pushStatusEnabled',
+                          disabled: 'pushStatusDisabled',
+                          unsupported: 'pushStatusUnsupported',
+                          denied: 'pushStatusDenied',
+                          unconfigured: 'pushStatusUnconfigured',
+                          error: 'pushStatusError',
+                        }[pushStatus])}
+                      </p>
+                    </div>
+                  </div>
+                  {pushStatus === 'enabled' ? (
+                    <button
+                      type="button"
+                      disabled={pushBusy || !isOnline}
+                      onClick={() => void handleDisablePush()}
+                      className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg border border-stone-300 px-4 py-2 text-xs font-semibold text-stone-700 hover:bg-white disabled:opacity-50 dark:border-stone-700 dark:text-stone-200 dark:hover:bg-stone-800"
+                    >
+                      {pushBusy ? t('pushWorking') : t('pushDisable')}
+                    </button>
+                  ) : pushStatus === 'disabled' || pushStatus === 'denied' || pushStatus === 'error' ? (
+                    <button
+                      type="button"
+                      disabled={pushBusy || !isOnline}
+                      onClick={() => void handleEnablePush()}
+                      className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg bg-emerald-900 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+                    >
+                      {pushBusy ? t('pushWorking') : t('pushEnable')}
+                    </button>
+                  ) : null}
+                </div>
+                {pushError && <p className="mt-3 text-xs text-red-700 dark:text-red-300" role="alert">{pushError}</p>}
+              </div>
+              <div className="max-w-full overflow-x-auto">
+                <table className="w-full table-fixed text-xs">
+                  <thead><tr className="text-left text-stone-500"><th className="w-2/5 break-words py-2 pr-2">{t('notificationCategory')}</th><th className="w-1/5 break-words px-1 py-2">{t('notificationInApp')}</th><th className="w-1/5 break-words px-1 py-2">{t('notificationSms')}</th><th className="w-1/5 break-words px-1 py-2">{t('notificationPush')}</th></tr></thead>
                   <tbody>{notificationCategories.map((category) => (
                     <tr key={category} className="border-t border-stone-100 dark:border-stone-800">
-                      <th scope="row" className="py-3 pr-3 text-left font-medium text-stone-800 dark:text-stone-200">{t(`notificationCategory_${category}`)}</th>
-                      {(['in_app', 'sms'] as const).map((channel) => (
-                        <td key={channel} className="px-2 py-3"><label className="inline-flex items-center gap-2 cursor-pointer">
-                          <input type="checkbox" disabled={!editing || saving || !isOnline || (channel === 'sms' && !smsOptIn)} checked={notificationPreferences.categories[category][channel]} onChange={(event) => setNotificationPreferences((current) => ({ ...current, categories: { ...current.categories, [category]: { ...current.categories[category], [channel]: event.target.checked } } }))} className="rounded border-stone-300 text-emerald-800 focus:ring-emerald-700" />
-                          <span className="sr-only">{t(`notificationCategory_${category}`)} {t(channel === 'in_app' ? 'notificationInApp' : 'notificationSms')}</span>
+                      <th scope="row" className="break-words py-3 pr-3 text-left font-medium text-stone-800 dark:text-stone-200">{t(`notificationCategory_${category}`)}</th>
+                      {(['in_app', 'sms', 'push'] as const).map((channel) => (
+                        <td key={channel} className="px-1 py-3"><label className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 cursor-pointer">
+                          <input type="checkbox" disabled={!editing || saving || !isOnline || (channel === 'sms' && !smsOptIn) || (channel === 'push' && pushStatus !== 'enabled')} checked={notificationPreferences.categories[category][channel]} onChange={(event) => setNotificationPreferences((current) => ({ ...current, categories: { ...current.categories, [category]: { ...current.categories[category], [channel]: event.target.checked } } }))} className="h-4 w-4 rounded border-stone-300 text-emerald-800 focus:ring-emerald-700" />
+                          <span className="sr-only">{t(`notificationCategory_${category}`)} {t(channel === 'in_app' ? 'notificationInApp' : channel === 'sms' ? 'notificationSms' : 'notificationPush')}</span>
                         </label></td>
                       ))}
                     </tr>
@@ -466,6 +788,7 @@ export const ProfilePage: React.FC = () => {
                 </table>
               </div>
               <p className="text-[11px] text-stone-500 dark:text-stone-400">{t('notificationSmsMasterHelp')}</p>
+              <p className="text-[11px] text-stone-500 dark:text-stone-400">{t('notificationPushMasterHelp')}</p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block text-xs font-medium text-stone-700 dark:text-stone-300">{t('notificationReminderTiming')}
                   <select disabled={!editing || saving || !isOnline} value={notificationPreferences.reminder_days_before} onChange={(event) => setNotificationPreferences((current) => ({ ...current, reminder_days_before: Number(event.target.value) as 0 | 1 | 2 | 3 }))} className="mt-1.5 w-full rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2">

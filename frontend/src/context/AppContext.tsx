@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { SupportedLanguage, translations } from '../i18n/translations';
+import { apiRequest } from '../services/api';
 import { getApiBaseUrl, setApiBaseUrlOverride } from '../utils/media';
 
 export type ThemeMode = 'light' | 'dark';
@@ -11,6 +12,9 @@ export interface ToastMessage {
   variant: ToastVariant;
 }
 
+export type ConnectionStatus = 'checking' | 'online' | 'offline' | 'unavailable';
+export type OfflineSyncStatus = 'idle' | 'syncing' | 'succeeded' | 'failed';
+
 interface AppContextValue {
   theme: ThemeMode;
   toggleTheme: () => void;
@@ -19,6 +23,8 @@ interface AppContextValue {
   setLanguage: (lang: SupportedLanguage) => void;
   t: (key: string) => string;
   isOnline: boolean;
+  connectionStatus: ConnectionStatus;
+  offlineSyncStatus: OfflineSyncStatus;
   toasts: ToastMessage[];
   notify: (message: string, variant?: ToastVariant) => void;
   dismissToast: (id: string) => void;
@@ -53,9 +59,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return 'en';
   });
 
-  const [isOnline, setIsOnline] = useState<boolean>(() =>
-    typeof navigator !== 'undefined' ? navigator.onLine : true
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(() =>
+    typeof navigator !== 'undefined' && navigator.onLine ? 'checking' : 'offline'
   );
+
+  const [offlineSyncStatus, setOfflineSyncStatus] =
+    useState<OfflineSyncStatus>('idle');
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [apiBaseUrl, setApiBaseUrlState] = useState<string>(() => getApiBaseUrl());
@@ -84,13 +93,93 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [language]);
 
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+    let active = true;
+    let checking = false;
+
+    const checkConnection = async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!navigator.onLine) {
+        setConnectionStatus('offline');
+        return;
+      }
+      if (checking) return;
+
+      checking = true;
+      try {
+        const health = await apiRequest<{ status?: string }>('/health', {
+          method: 'GET',
+          skipAuth: true,
+          timeoutMs: 5000,
+        });
+        if (active) {
+          setConnectionStatus(
+            navigator.onLine
+              ? health?.status === 'healthy'
+                ? 'online'
+                : 'unavailable'
+              : 'offline',
+          );
+        }
+      } catch {
+        if (active) {
+          setConnectionStatus(navigator.onLine ? 'unavailable' : 'offline');
+        }
+      } finally {
+        checking = false;
+      }
+    };
+
+    const handleOffline = () => setConnectionStatus('offline');
+    const handleOnline = () => {
+      setConnectionStatus('checking');
+      void checkConnection();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void checkConnection();
+    };
+
+    void checkConnection();
+    const connectionTimer = window.setInterval(() => void checkConnection(), 90_000);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
+      active = false;
+      window.clearInterval(connectionTimer);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
+    let clearTimer: number | undefined;
+    const handleSyncStatus = (event: Event) => {
+      const status = (event as CustomEvent<{ status?: string }>).detail?.status;
+      if (status !== 'syncing' && status !== 'succeeded' && status !== 'failed') {
+        return;
+      }
+
+      if (clearTimer !== undefined) window.clearTimeout(clearTimer);
+      setOfflineSyncStatus(status);
+      if (status !== 'syncing') {
+        clearTimer = window.setTimeout(
+          () => setOfflineSyncStatus('idle'),
+          15_000,
+        );
+      }
+    };
+
+    window.addEventListener(
+      'maizecare:offline-diagnosis-sync-status',
+      handleSyncStatus,
+    );
+    return () => {
+      window.removeEventListener(
+        'maizecare:offline-diagnosis-sync-status',
+        handleSyncStatus,
+      );
+      if (clearTimer !== undefined) window.clearTimeout(clearTimer);
     };
   }, []);
 
@@ -133,6 +222,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setApiBaseUrlState(getApiBaseUrl());
   }, []);
 
+  const isOnline = connectionStatus === 'online';
+
   return (
     <AppContext.Provider
       value={{
@@ -143,6 +234,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setLanguage,
         t,
         isOnline,
+        connectionStatus,
+        offlineSyncStatus,
         toasts,
         notify,
         dismissToast,

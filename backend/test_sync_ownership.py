@@ -43,6 +43,7 @@ with app.app_context():
 
         result = service.synchronize_diagnosis(
             operation_id=OPERATION_ID,
+            operation_type="diagnosis",
             user_id=ATTACKER_USER_ID,
             image_path=IMAGE_PATH,
             language="en",

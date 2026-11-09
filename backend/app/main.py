@@ -12,10 +12,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 
 from backend.app.config import get_config
-from backend.app.extensions import (
-    db,
-    jwt,
-)
+from backend.app.extensions import db, jwt, migrate
 
 # ---------------------------------------------------------
 # Database models
@@ -55,6 +52,7 @@ from backend.app.routes.crop_calendar import crop_calendar_bp
 from backend.app.routes.sync import sync_bp
 from backend.app.routes.sync_batch import sync_batch_bp
 from backend.app.routes.regional_alert import regional_alert_bp
+from backend.app.routes.farmer_push import farmer_push_bp
 from backend.app.services.smart_notification_scheduler import start_smart_notification_scheduler
 def create_app(
     environment: str | None = None,
@@ -88,8 +86,21 @@ def create_app(
     # =====================================================
 
     db.init_app(app)
-    
+    migrate.init_app(app, db)
     jwt.init_app(app)
+
+    @jwt.token_in_blocklist_loader
+    def reject_inactive_account(jwt_header, jwt_payload):
+        identity = jwt_payload.get("sub")
+        try:
+            user_id = int(identity)
+        except (TypeError, ValueError):
+            return True
+
+        user = db.session.get(User, user_id)
+        if user is None or not user.is_active:
+            return True
+        return False
     # =====================================================
     # DIRECTORIES
     # =====================================================
@@ -142,6 +153,7 @@ def create_app(
     app.register_blueprint(sync_bp)
     app.register_blueprint(sync_batch_bp)
     app.register_blueprint(regional_alert_bp)
+    app.register_blueprint(farmer_push_bp)
 
     # A PostgreSQL advisory lock elects one worker across multi-worker
     # deployments. Testing and Flask's debug reloader parent stay scheduler-free.

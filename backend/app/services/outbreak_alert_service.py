@@ -348,6 +348,7 @@ class OutbreakAlertService:
         )
 
         created = 0
+        created_notifications = []
         for farmer in farmers:
             user_id = farmer.get("user_id")
             if user_id is None:
@@ -361,8 +362,10 @@ class OutbreakAlertService:
 
             profile = db.session.get(FarmerProfile, user_id)
             from backend.app.services.crop_calendar_notification_service import CropCalendarNotificationService
-            if profile and not CropCalendarNotificationService.preferences(profile)["categories"]["important_alerts"]["in_app"]:
-                continue
+            if profile:
+                channels = CropCalendarNotificationService.preferences(profile)["categories"]["important_alerts"]
+                if not (channels["in_app"] or channels["push"]):
+                    continue
 
             language = str(farmer.get("preferred_language", "en") or "en").lower()
             is_amharic = language.startswith("am")
@@ -389,10 +392,23 @@ class OutbreakAlertService:
                 is_read=False,
             )
             db.session.add(notification)
+            created_notifications.append(notification)
             created += 1
 
         if created:
             db.session.commit()
+            from backend.app.services.web_push_service import WebPushService
+
+            for notification in created_notifications:
+                try:
+                    WebPushService.enqueue_notification(notification)
+                except Exception:
+                    db.session.rollback()
+                    logger.exception(
+                        "Could not enqueue outbreak push (alert_id=%s, farmer_id=%s).",
+                        alert.id,
+                        notification.user_id,
+                    )
 
         return created
 

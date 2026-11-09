@@ -36,6 +36,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backend.app.extensions import db
+from backend.app.models.extension_agent import ExtensionAgent
 from backend.app.models.user import User
 
 
@@ -749,6 +750,19 @@ class AuthService:
             raise InactiveUserError(
                 "This account is inactive."
             )
+
+        if user.role == "extension_agent":
+            agent = db.session.get(ExtensionAgent, user.id)
+            if (
+                agent is None
+                or agent.account_status != "active"
+                or not agent.region_id
+                or not agent.zone_id
+                or not agent.woreda_id
+            ):
+                raise InactiveUserError(
+                    "This extension-agent account is inactive."
+                )
 
         # -------------------------------------------------
         # PASSWORD VERIFICATION

@@ -6,8 +6,9 @@ export const LoadingSkeleton: React.FC<{ rows?: number; className?: string }> = 
   rows = 4,
   className = '',
 }) => {
+  const { t } = useApp();
   return (
-    <div className={`space-y-3 ${className}`} role="status" aria-live="polite" aria-label="Loading content">
+    <div className={`space-y-3 ${className}`} role="status" aria-live="polite" aria-label={t('loading')}>
       {Array.from({ length: rows }).map((_, i) => (
         <div
           key={i}

@@ -79,4 +79,7 @@ websockets==17.0.1
 Werkzeug==3.1.8
 wheel==0.47.0
 wrapt==2.2.1
+pywebpush==2.5.0
 reportlab==5.0.1
+gunicorn==23.0.0
+Flask-Migrate==4.1.0

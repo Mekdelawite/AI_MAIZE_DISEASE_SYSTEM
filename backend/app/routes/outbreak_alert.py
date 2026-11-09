@@ -400,15 +400,20 @@ def get_outbreak_alerts():
     agent_profile = None
     if is_extension_agent:
         agent_profile = db.session.get(ExtensionAgent, user.id)
-        if agent_profile is None:
-            return error_response("Extension-agent profile not found.", 403)
+        if (
+            agent_profile is None
+            or agent_profile.account_status != "active"
+            or not agent_profile.region_id
+            or not agent_profile.zone_id
+            or not agent_profile.woreda_id
+        ):
+            return error_response("A single active woreda assignment is required.", 403)
 
     query = OutbreakAlert.query
 
     if agent_profile is not None:
         query = query.filter(OutbreakAlert.region == agent_profile.region)
-        if agent_profile.woreda:
-            query = query.filter(OutbreakAlert.woreda == agent_profile.woreda)
+        query = query.filter(OutbreakAlert.woreda == agent_profile.woreda)
 
     disease_class = request.args.get("disease_class", "").strip()
 
@@ -515,8 +520,12 @@ def get_outbreak_alert(alert_id):
         agent_profile = db.session.get(ExtensionAgent, user.id)
         if (
             agent_profile is None
+            or agent_profile.account_status != "active"
+            or not agent_profile.region_id
+            or not agent_profile.zone_id
+            or not agent_profile.woreda_id
             or alert.region != agent_profile.region
-            or (agent_profile.woreda and alert.woreda != agent_profile.woreda)
+            or alert.woreda != agent_profile.woreda
         ):
             return error_response("Outbreak alert not found.", 404)
 

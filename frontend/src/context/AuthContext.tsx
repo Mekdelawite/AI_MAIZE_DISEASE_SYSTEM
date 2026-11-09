@@ -29,6 +29,7 @@ interface AuthContextValue {
   canLoginOffline: boolean;
   loginOffline: () => UserRecord;
   login: (payload: LoginPayload) => Promise<UserRecord>;
+  establishSession: (token: string, user: UserRecord) => Promise<UserRecord>;
   logout: () => void;
   refreshUser: () => Promise<UserRecord | null>;
 }
@@ -357,12 +358,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   /**
    * Online login using the existing backend authentication contract.
    */
-  const login = useCallback(
-    async (payload: LoginPayload): Promise<UserRecord> => {
-      const {
-        token: newToken,
-        user: loggedInUser,
-      } = await authService.login(payload);
+  const establishSession = useCallback(
+    async (newToken: string, loggedInUser: UserRecord | null): Promise<UserRecord> => {
+      if (!newToken) {
+        throw new Error('Authentication response did not include a valid JWT token.');
+      }
 
       // Remove the previous account's cached profile before replacing it.
       saveOfflineUser(null);
@@ -421,6 +421,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     [setLanguage, setRoutePreviewRole]
   );
 
+  /** Online login using the existing backend authentication contract. */
+  const login = useCallback(
+    async (payload: LoginPayload): Promise<UserRecord> => {
+      const { token: newToken, user: loggedInUser } =
+        await authService.login(payload);
+
+      return establishSession(newToken, loggedInUser);
+    },
+    [establishSession]
+  );
+
   const effectiveRole: UserRole | null =
     user?.role || routePreviewRole || null;
 
@@ -444,6 +455,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         canLoginOffline,
         loginOffline,
         login,
+        establishSession,
         logout,
         refreshUser,
         hasExplicitlyLoggedOut,

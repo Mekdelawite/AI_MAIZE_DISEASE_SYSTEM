@@ -16,6 +16,7 @@ from backend.app.extensions import db
 from backend.app.models import FarmerProfile, SMSRecord, User
 from backend.app.services.crop_calendar_notification_service import CropCalendarNotificationService
 from backend.app.services.sms_service import SMSService
+from backend.app.services.web_push_service import WebPushService
 
 _SCHEDULER_LOCK_ID = 824_510_275
 _started_apps: set[int] = set()
@@ -92,6 +93,7 @@ def start_smart_notification_scheduler(app) -> None:
                                 include_weather = current_day != last_weather_day
                                 CropCalendarNotificationService.run_daily(include_weather=include_weather)
                                 deliver_deferred_urgent_sms()
+                                WebPushService.deliver_pending()
                                 if include_weather:
                                     last_weather_day = current_day
                         except Exception:

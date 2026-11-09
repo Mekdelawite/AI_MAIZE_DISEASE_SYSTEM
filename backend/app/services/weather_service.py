@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+from typing import Callable
 import threading
 import time
 import requests
@@ -14,22 +15,70 @@ _RESPONSE_CACHE: dict[tuple, tuple[float, dict]] = {}
 _UNAVAILABLE_UNTIL: dict[str, float] = {}
 _CACHE_MAX_ENTRIES = 512
 _UNAVAILABLE_COOLDOWN_SECONDS = 60
+_REQUEST_TIMEOUT = (4, 8)
+_MAX_REQUEST_ATTEMPTS = 3
+_RETRY_BACKOFF_SECONDS = 0.25
+_COORDINATE_CACHE_PRECISION = 2
 
 
 class WeatherService:
     @staticmethod
-    def _validated_current_weather(data: dict) -> dict:
+    def _cache_key(provider: str, url: str, params: dict) -> tuple:
+        cache_params = dict(params)
+        if provider.startswith("open-meteo"):
+            for key in ("latitude", "longitude"):
+                value = cache_params.get(key)
+                if isinstance(value, (int, float)):
+                    cache_params[key] = round(value, _COORDINATE_CACHE_PRECISION)
+        return provider, url, tuple(sorted(cache_params.items()))
+
+    @staticmethod
+    def _validate_current_payload(data: dict) -> None:
         weather = WeatherService._format_weather_response(data)
         if not isinstance(weather.get("temperature"), (int, float)) or not weather.get("weather"):
-            with _CACHE_LOCK:
-                _UNAVAILABLE_UNTIL["openweather"] = time.monotonic() + _UNAVAILABLE_COOLDOWN_SECONDS
-            raise requests.RequestException("OpenWeather returned incomplete current conditions.")
+            raise ValueError("OpenWeather returned incomplete current conditions.")
+
+    @staticmethod
+    def _validate_forecast_payload(data: dict) -> None:
+        daily = data.get("daily")
+        if not isinstance(daily, dict) or not isinstance(daily.get("time"), list) or not daily["time"]:
+            raise ValueError("Open-Meteo returned no forecast days.")
+
+    @staticmethod
+    def _validate_historical_payload(data: dict) -> None:
+        daily = data.get("daily")
+        if (
+            not isinstance(daily, dict)
+            or not isinstance(daily.get("time"), list)
+            or not daily["time"]
+            or not isinstance(daily.get("precipitation_sum"), list)
+            or not isinstance(daily.get("et0_fao_evapotranspiration"), list)
+        ):
+            raise ValueError("Open-Meteo archive returned incomplete water-balance data.")
+
+    @staticmethod
+    def _provider_unavailable(provider: str, message: str) -> requests.RequestException:
+        with _CACHE_LOCK:
+            _UNAVAILABLE_UNTIL[provider] = time.monotonic() + _UNAVAILABLE_COOLDOWN_SECONDS
+        return requests.RequestException(message)
+
+    @staticmethod
+    def _validated_current_weather(data: dict) -> dict:
+        WeatherService._validate_current_payload(data)
+        weather = WeatherService._format_weather_response(data)
         return weather
 
     @staticmethod
-    def _get_json(provider: str, url: str, params: dict, *, cache_seconds: int) -> dict:
-        """Fetch provider JSON with bounded retries, caching, and a short circuit break."""
-        key = (provider, url, tuple(sorted(params.items())))
+    def _get_json(
+        provider: str,
+        url: str,
+        params: dict,
+        *,
+        cache_seconds: int,
+        response_validator: Callable[[dict], None] | None = None,
+    ) -> dict:
+        """Fetch provider JSON with bounded retries, successful-response caching, and cooldown."""
+        key = WeatherService._cache_key(provider, url, params)
         now = time.monotonic()
         with _CACHE_LOCK:
             cached = _RESPONSE_CACHE.get(key)
@@ -41,16 +90,15 @@ class WeatherService:
                     f"{provider} weather service is temporarily unavailable."
                 )
 
-        for attempt in range(2):
+        for attempt in range(_MAX_REQUEST_ATTEMPTS):
             try:
-                response = requests.get(url, params=params, timeout=(2, 3))
-                if response.status_code >= 500 and attempt == 0:
-                    time.sleep(0.2)
-                    continue
+                response = requests.get(url, params=params, timeout=_REQUEST_TIMEOUT)
                 response.raise_for_status()
                 data = response.json()
                 if not isinstance(data, dict):
                     raise ValueError("Weather provider returned a non-object response.")
+                if response_validator is not None:
+                    response_validator(data)
                 with _CACHE_LOCK:
                     _UNAVAILABLE_UNTIL.pop(provider, None)
                     _RESPONSE_CACHE[key] = (time.monotonic() + cache_seconds, data)
@@ -58,32 +106,47 @@ class WeatherService:
                         oldest = min(_RESPONSE_CACHE, key=lambda item: _RESPONSE_CACHE[item][0])
                         _RESPONSE_CACHE.pop(oldest, None)
                 return deepcopy(data)
-            except requests.exceptions.SSLError:
+            except requests.exceptions.SSLError as exc:
                 # A certificate failure is not transient; retrying it adds delay without benefit.
-                with _CACHE_LOCK:
-                    _UNAVAILABLE_UNTIL[provider] = time.monotonic() + _UNAVAILABLE_COOLDOWN_SECONDS
-                raise
+                raise WeatherService._provider_unavailable(
+                    provider,
+                    f"{provider} weather request failed TLS verification.",
+                ) from exc
             except (requests.Timeout, requests.ConnectionError) as exc:
-                if attempt == 0:
-                    time.sleep(0.2)
+                if attempt + 1 < _MAX_REQUEST_ATTEMPTS:
+                    time.sleep(_RETRY_BACKOFF_SECONDS * (2 ** attempt))
                     continue
-                with _CACHE_LOCK:
-                    _UNAVAILABLE_UNTIL[provider] = time.monotonic() + _UNAVAILABLE_COOLDOWN_SECONDS
-                raise requests.RequestException(f"{provider} weather service is unavailable.") from exc
+                failure_type = type(exc).__name__
+                raise WeatherService._provider_unavailable(
+                    provider,
+                    f"{provider} weather service is unavailable ({failure_type}).",
+                ) from exc
             except requests.HTTPError as exc:
                 status = getattr(exc.response, "status_code", None)
-                if status in (401, 429) or (status is not None and status >= 500):
-                    with _CACHE_LOCK:
-                        _UNAVAILABLE_UNTIL[provider] = time.monotonic() + _UNAVAILABLE_COOLDOWN_SECONDS
+                if status == 429 or (status is not None and status >= 500):
+                    if attempt + 1 < _MAX_REQUEST_ATTEMPTS:
+                        time.sleep(_RETRY_BACKOFF_SECONDS * (2 ** attempt))
+                        continue
+                    raise WeatherService._provider_unavailable(
+                        provider,
+                        f"{provider} returned HTTP {status} after {_MAX_REQUEST_ATTEMPTS} attempts.",
+                    ) from exc
                 raise
             except (requests.exceptions.JSONDecodeError, ValueError) as exc:
-                with _CACHE_LOCK:
-                    _UNAVAILABLE_UNTIL[provider] = time.monotonic() + _UNAVAILABLE_COOLDOWN_SECONDS
-                raise requests.RequestException(f"{provider} returned an invalid weather response.") from exc
+                if attempt + 1 < _MAX_REQUEST_ATTEMPTS:
+                    time.sleep(_RETRY_BACKOFF_SECONDS * (2 ** attempt))
+                    continue
+                raise WeatherService._provider_unavailable(
+                    provider,
+                    f"{provider} returned an invalid weather response ({type(exc).__name__}).",
+                ) from exc
             except requests.RequestException:
                 raise
 
-        raise requests.RequestException(f"{provider} weather service is unavailable.")
+        raise WeatherService._provider_unavailable(
+            provider,
+            f"{provider} weather service is unavailable.",
+        )
 
     @staticmethod
     def _format_weather_response(data: dict) -> dict:
@@ -131,7 +194,13 @@ class WeatherService:
         if not city or not city.strip():
             raise ValueError("City name is required.")
         try:
-            data = WeatherService._get_json("openweather", Config.WEATHER_API_URL, {"q": city.strip(), "appid": Config.WEATHER_API_KEY, "units": units}, cache_seconds=300)
+            data = WeatherService._get_json(
+                "openweather",
+                Config.WEATHER_API_URL,
+                {"q": city.strip(), "appid": Config.WEATHER_API_KEY, "units": units},
+                cache_seconds=300,
+                response_validator=WeatherService._validate_current_payload,
+            )
         except requests.HTTPError as exc:
             if getattr(exc.response, "status_code", None) == 401:
                 raise ValueError("OpenWeather API key is invalid, inactive, or not authorized.") from exc
@@ -146,7 +215,13 @@ class WeatherService:
             raise ValueError("Weather API key is not configured.")
         latitude, longitude = WeatherService._coordinates(latitude, longitude)
         try:
-            data = WeatherService._get_json("openweather", Config.WEATHER_API_URL, {"lat": latitude, "lon": longitude, "appid": Config.WEATHER_API_KEY, "units": units}, cache_seconds=300)
+            data = WeatherService._get_json(
+                "openweather",
+                Config.WEATHER_API_URL,
+                {"lat": latitude, "lon": longitude, "appid": Config.WEATHER_API_KEY, "units": units},
+                cache_seconds=300,
+                response_validator=WeatherService._validate_current_payload,
+            )
         except requests.HTTPError as exc:
             if getattr(exc.response, "status_code", None) == 401:
                 raise ValueError("OpenWeather API key is invalid, inactive, or not authorized.") from exc
@@ -165,25 +240,21 @@ class WeatherService:
             "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,et0_fao_evapotranspiration",
             "forecast_days": 7, "timezone": "auto",
         }
-        data = WeatherService._get_json("open-meteo-forecast", "https://api.open-meteo.com/v1/forecast", params, cache_seconds=1800)
+        data = WeatherService._get_json(
+            "open-meteo-forecast",
+            "https://api.open-meteo.com/v1/forecast",
+            params,
+            cache_seconds=1800,
+            response_validator=WeatherService._validate_forecast_payload,
+        )
         daily = data.get("daily") or {}
-        if not isinstance(daily, dict):
-            with _CACHE_LOCK:
-                _UNAVAILABLE_UNTIL["open-meteo-forecast"] = time.monotonic() + _UNAVAILABLE_COOLDOWN_SECONDS
-            raise requests.RequestException("Weather provider returned an invalid forecast.")
         dates = daily.get("time") or []
-        if not isinstance(dates, list) or not dates:
-            with _CACHE_LOCK:
-                _UNAVAILABLE_UNTIL["open-meteo-forecast"] = time.monotonic() + _UNAVAILABLE_COOLDOWN_SECONDS
-            raise requests.RequestException("Weather provider returned no forecast days.")
         def at(field, index):
             values = daily.get(field)
             return values[index] if isinstance(values, list) and index < len(values) else None
         current = data.get("current") or {}
         if not isinstance(current, dict):
-            with _CACHE_LOCK:
-                _UNAVAILABLE_UNTIL["open-meteo-forecast"] = time.monotonic() + _UNAVAILABLE_COOLDOWN_SECONDS
-            raise requests.RequestException("Weather provider returned invalid current forecast metadata.")
+            current = {}
         return {
             "provider": "Open-Meteo", "latitude": data.get("latitude"), "longitude": data.get("longitude"),
             "timezone": data.get("timezone"), "timezone_abbreviation": data.get("timezone_abbreviation"),
@@ -202,17 +273,15 @@ class WeatherService:
             "latitude": latitude, "longitude": longitude, "start_date": start_date, "end_date": end_date,
             "daily": "precipitation_sum,et0_fao_evapotranspiration", "timezone": "auto",
         }
-        data = WeatherService._get_json("open-meteo-archive", "https://archive-api.open-meteo.com/v1/archive", params, cache_seconds=21600)
+        data = WeatherService._get_json(
+            "open-meteo-archive",
+            "https://archive-api.open-meteo.com/v1/archive",
+            params,
+            cache_seconds=21600,
+            response_validator=WeatherService._validate_historical_payload,
+        )
         daily = data.get("daily") or {}
-        if not isinstance(daily, dict):
-            with _CACHE_LOCK:
-                _UNAVAILABLE_UNTIL["open-meteo-archive"] = time.monotonic() + _UNAVAILABLE_COOLDOWN_SECONDS
-            raise requests.RequestException("Open-Meteo archive returned an invalid water-balance response.")
         dates, rain, et0 = daily.get("time") or [], daily.get("precipitation_sum"), daily.get("et0_fao_evapotranspiration")
-        if not isinstance(dates, list) or not dates or not isinstance(rain, list) or not isinstance(et0, list):
-            with _CACHE_LOCK:
-                _UNAVAILABLE_UNTIL["open-meteo-archive"] = time.monotonic() + _UNAVAILABLE_COOLDOWN_SECONDS
-            raise requests.RequestException("Open-Meteo archive returned incomplete water-balance data.")
         return {"provider": "Open-Meteo Historical Weather API (reanalysis)", "data_type": "historical_reanalysis_not_station_measurements",
             "timezone": data.get("timezone"), "days": [{"date": day, "precipitation_mm": rain[i] if i < len(rain) else None,
             "et0_mm": et0[i] if i < len(et0) else None} for i, day in enumerate(dates)]}

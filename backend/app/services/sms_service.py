@@ -195,6 +195,7 @@ class SMSService:
         kebele: str | None = None,
         outbreak_alert_id: int | None = None,
         dedupe_key: str | None = None,
+        redact_message: bool = False,
     ) -> dict[str, Any]:
         """
         Send an SMS and record the result in PostgreSQL.
@@ -219,7 +220,11 @@ class SMSService:
         sms_record = existing or SMSRecord(
             recipient_phone=phone,
             recipient_type=recipient_type,
-            message=message,
+            message=(
+                "Sensitive verification message redacted"
+                if redact_message
+                else message
+            ),
             language=language,
             notification_type=notification_type,
             provider="africas_talking",
@@ -386,9 +391,13 @@ class SMSService:
                 "provider_status_code": status_code,
                 "provider_message_id": provider_message_id,
                 "phone": phone,
-                "message": message,
+                "message": (
+                    "Sensitive verification message redacted"
+                    if redact_message
+                    else message
+                ),
                 "http_status": response_status,
-                "raw_response": parsed_response,
+                "raw_response": None if redact_message else parsed_response,
                 "sms_record_id": sms_record.id,
                 "outbreak_alert_id": outbreak_alert_id,
             }
@@ -402,7 +411,11 @@ class SMSService:
 
             try:
                 sms_record.status = "failed"
-                sms_record.error_message = str(exc)
+                sms_record.error_message = (
+                    "Sensitive verification message delivery failed."
+                    if redact_message
+                    else str(exc)
+                )
                 sms_record.updated_at = datetime.now(
                     timezone.utc
                 )
@@ -415,16 +428,25 @@ class SMSService:
                     "Could not save the SMS failure record."
                 )
 
-            current_app.logger.exception(
-                "Africa's Talking SMS request failed."
-            )
+            if redact_message:
+                current_app.logger.error(
+                    "SMS delivery failed for a redacted verification message."
+                )
+            else:
+                current_app.logger.exception(
+                    "Africa's Talking SMS request failed."
+                )
 
             return {
                 "success": False,
                 "status": "failed",
                 "provider": "africas_talking",
                 "phone": phone,
-                "error": str(exc),
+                "error": (
+                    "Sensitive verification message delivery failed."
+                    if redact_message
+                    else str(exc)
+                ),
                 "sms_record_id": sms_record.id,
                 "outbreak_alert_id": outbreak_alert_id,
             }

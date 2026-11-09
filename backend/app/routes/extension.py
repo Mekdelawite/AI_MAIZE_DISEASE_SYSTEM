@@ -151,6 +151,15 @@ def _get_authenticated_agent():
     if agent_profile is None:
         return None, None
 
+    if (
+        not user.is_active
+        or agent_profile.account_status != "active"
+        or not agent_profile.region_id
+        or not agent_profile.zone_id
+        or not agent_profile.woreda_id
+    ):
+        return None, None
+
     return user, agent_profile
 
 
@@ -215,7 +224,10 @@ def _diagnosis_is_in_agent_area(
         farmer_profile.region or ""
     ).strip()
 
-    if not agent_region:
+    agent_woreda = (
+        agent_profile.woreda or ""
+    ).strip()
+    if not agent_region or not agent_woreda:
         return False
 
     if not farmer_region:
@@ -233,15 +245,8 @@ def _diagnosis_is_in_agent_area(
         farmer_profile.woreda or ""
     ).strip()
 
-    # If the agent has a woreda assignment,
-    # the farmer must belong to that exact woreda.
-    if agent_woreda:
-
-        if not farmer_woreda:
-            return False
-
-        if agent_woreda != farmer_woreda:
-            return False
+    if not farmer_woreda or agent_woreda != farmer_woreda:
+        return False
 
     return True
 
@@ -273,12 +278,17 @@ def _get_assigned_diagnosis(
         )
     )
 
-    if agent_profile.woreda:
+    if (
+        not agent_profile.region_id
+        or not agent_profile.zone_id
+        or not agent_profile.woreda_id
+        or not agent_profile.woreda
+    ):
+        return None
 
-        query = query.filter(
-            FarmerProfile.woreda
-            == agent_profile.woreda
-        )
+    query = query.filter(
+        FarmerProfile.woreda == agent_profile.woreda
+    )
 
     return query.first()
 
@@ -548,13 +558,12 @@ def get_diagnoses():
             )
         )
 
-        if not agent_region:
+        if not agent_region or not agent_woreda:
 
             return error_response(
                 "INVALID_AGENT_ASSIGNMENT",
                 (
-                    "Extension agent has "
-                    "no assigned region."
+                    "Extension agent must have exactly one assigned woreda."
                 ),
                 400,
             )
@@ -742,12 +751,9 @@ def get_diagnoses():
         # WOREDA RESTRICTION
         # =================================================
 
-        if agent_woreda:
-
-            query = query.filter(
-                FarmerProfile.woreda
-                == agent_woreda
-            )
+        query = query.filter(
+            FarmerProfile.woreda == agent_woreda
+        )
 
         # =================================================
         # DISEASE FILTER
@@ -1082,13 +1088,12 @@ def get_regional_dashboard():
             )
         )
 
-        if not agent_region:
+        if not agent_region or not agent_woreda:
 
             return error_response(
                 "INVALID_AGENT_ASSIGNMENT",
                 (
-                    "Extension agent has "
-                    "no assigned region."
+                    "Extension agent must have exactly one assigned woreda."
                 ),
                 400,
             )
@@ -1120,12 +1125,9 @@ def get_regional_dashboard():
         # WOREDA RESTRICTION
         # =================================================
 
-        if agent_woreda:
-
-            query = query.filter(
-                FarmerProfile.woreda
-                == agent_woreda
-            )
+        query = query.filter(
+            FarmerProfile.woreda == agent_woreda
+        )
 
         # =================================================
         # LOAD DIAGNOSES
@@ -1395,13 +1397,12 @@ def get_geo_diseases():
             )
         )
 
-        if not agent_region:
+        if not agent_region or not agent_woreda:
 
             return error_response(
                 "INVALID_AGENT_ASSIGNMENT",
                 (
-                    "Extension agent has "
-                    "no assigned region."
+                    "Extension agent must have exactly one assigned woreda."
                 ),
                 400,
             )
@@ -1546,12 +1547,9 @@ def get_geo_diseases():
         # WOREDA RESTRICTION
         # =================================================
 
-        if agent_woreda:
-
-            query = query.filter(
-                FarmerProfile.woreda
-                == agent_woreda
-            )
+        query = query.filter(
+            FarmerProfile.woreda == agent_woreda
+        )
 
         # =================================================
         # DISEASE FILTER

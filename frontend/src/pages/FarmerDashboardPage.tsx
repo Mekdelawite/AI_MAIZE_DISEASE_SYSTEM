@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
@@ -20,21 +20,21 @@ import { useAuth } from '../context/AuthContext';
 import { diagnosisService } from '../services/diagnosisService';
 import { discussionService } from '../services/discussionService';
 import { profileService } from '../services/profileService';
-import { syncService } from '../services/syncService';
+import { offlineDiagnosisStore, type OfflineDiagnosisRecord } from '../services/offlineDiagnosisStore';
 import { weatherService } from '../services/weatherService';
-import maizeBanner from '../assets/images/farmer_dashboard_maize_banner.jpg';
+import maizeBanner640 from '../assets/images/farmer_dashboard_maize_banner_640.webp';
+import maizeBanner1280 from '../assets/images/farmer_dashboard_maize_banner_1280.webp';
 import {
   CropCalendarData,
   DiagnosisHistoryItem,
   DiscussionPost,
   ProfileResponseData,
-  QueuedSyncItem,
   WeatherData,
 } from '../types/api';
 import { formatConfidence, formatDateTime } from '../utils/media';
 
 export const FarmerDashboardPage: React.FC = () => {
-  const { t, notify, language } = useApp();
+  const { t, notify, language, isOnline } = useApp();
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -51,54 +51,130 @@ export const FarmerDashboardPage: React.FC = () => {
 
   const [calendar, setCalendar] = useState<CropCalendarData | null>(null);
   const [posts, setPosts] = useState<DiscussionPost[]>([]);
-  const [offlineQueue, setOfflineQueue] = useState<QueuedSyncItem[]>([]);
+  const [offlineQueue, setOfflineQueue] = useState<OfflineDiagnosisRecord[]>([]);
+  const dashboardRequestId = useRef(0);
 
   const loadDashboardData = useCallback(async () => {
+    const requestId = ++dashboardRequestId.current;
     setHistoryLoading(true);
     setHistoryError(null);
-    setOfflineQueue(syncService.getQueue());
 
-    // Load recent diagnoses
-    try {
-      const result = await diagnosisService.getHistoryWithCount(5);
-      setHistory(result.items);
-      setHistoryCount(result.totalCount);
-    } catch (err: any) {
-      setHistoryError(err?.message || 'Unable to load diagnosis history.');
-    } finally {
+    if (!isOnline) {
+      setHistory([]);
+      setHistoryCount(0);
       setHistoryLoading(false);
+      setProfileData(null);
+      setWeather(null);
+      setWeatherError(t('calendarOffline'));
+      setCalendar(null);
+      setPosts([]);
+      return;
     }
 
-    // Load profile, weather, calendar, and discussion in parallel without blocking primary view
+    // Start independent dashboard requests together so history does not delay
+    // profile, weather, calendar, or discussion data.
     profileService
       .getProfile()
-      .then((res) => setProfileData(res))
-      .catch(() => {});
+      .then((res) => {
+        if (requestId === dashboardRequestId.current) setProfileData(res);
+      })
+      .catch(() => {
+        if (requestId === dashboardRequestId.current) setProfileData(null);
+      });
 
     weatherService
       .getFarmerWeather('metric')
       .then((res) => {
-        setWeather(res);
-        setWeatherError(null);
+        if (requestId === dashboardRequestId.current) {
+          setWeather(res);
+          setWeatherError(null);
+        }
       })
       .catch((err: any) => {
-        setWeatherError(err?.message || 'Weather unavailable');
+        if (requestId === dashboardRequestId.current) {
+          setWeather(null);
+          setWeatherError(err?.message || 'Weather unavailable');
+        }
       });
 
     weatherService
       .getCropCalendar()
-      .then((res) => setCalendar(res))
-      .catch(() => {});
+      .then((res) => {
+        if (requestId === dashboardRequestId.current) setCalendar(res);
+      })
+      .catch(() => {
+        if (requestId === dashboardRequestId.current) setCalendar(null);
+      });
 
     discussionService
       .getPosts({ page: 1, per_page: 3 })
-      .then((res) => setPosts(res.posts.slice(0, 3)))
-      .catch(() => {});
-  }, []);
+      .then((res) => {
+        if (requestId === dashboardRequestId.current) {
+          setPosts(res.posts.slice(0, 3));
+        }
+      })
+      .catch(() => {
+        if (requestId === dashboardRequestId.current) setPosts([]);
+      });
+
+    try {
+      const result = await diagnosisService.getHistoryWithCount(5);
+      if (requestId === dashboardRequestId.current) {
+        setHistory(result.items);
+        setHistoryCount(result.totalCount);
+      }
+    } catch (err: any) {
+      if (requestId === dashboardRequestId.current) {
+        setHistoryError(err?.message || 'Unable to load diagnosis history.');
+      }
+    } finally {
+      if (requestId === dashboardRequestId.current) {
+        setHistoryLoading(false);
+      }
+    }
+  }, [isOnline, t]);
 
   useEffect(() => {
     loadDashboardData();
   }, [loadDashboardData]);
+
+  useEffect(() => {
+    if (user?.role !== 'farmer' || user.id === undefined || user.id === null) {
+      setOfflineQueue([]);
+      return;
+    }
+
+    let active = true;
+    const refreshOfflineQueue = async () => {
+      try {
+        const records = await offlineDiagnosisStore.getAll(user.id);
+        if (active) setOfflineQueue(records);
+      } catch (error) {
+        console.error('Could not load the farmer offline diagnosis queue:', error);
+      }
+    };
+
+    void refreshOfflineQueue();
+    window.addEventListener(
+      'maizecare:offline-diagnosis-queue-changed',
+      refreshOfflineQueue,
+    );
+    window.addEventListener(
+      'maizecare:offline-diagnosis-sync-status',
+      refreshOfflineQueue,
+    );
+    return () => {
+      active = false;
+      window.removeEventListener(
+        'maizecare:offline-diagnosis-queue-changed',
+        refreshOfflineQueue,
+      );
+      window.removeEventListener(
+        'maizecare:offline-diagnosis-sync-status',
+        refreshOfflineQueue,
+      );
+    };
+  }, [user?.id, user?.role]);
 
   const farmerProfile = profileData?.farmer_profile;
   const hasCoordinates =
@@ -107,7 +183,9 @@ export const FarmerDashboardPage: React.FC = () => {
     farmerProfile?.longitude !== undefined &&
     farmerProfile?.longitude !== null;
 
-  const calendarStages = calendar?.stages || calendar?.calendar || [];
+  const currentCropStage = calendar?.current_stage;
+  const upcomingReminders = calendar?.upcoming_reminders ?? [];
+  const recentDiagnosisId = history[0]?.diagnosis_id ?? history[0]?.id;
 
   const handleDeleteHistory = async () => {
     if (deleteTargetId === null) return;
@@ -133,76 +211,94 @@ export const FarmerDashboardPage: React.FC = () => {
       subtitle={language === 'am'
         ? 'የምርመራ ታሪክዎን፣ የአየር ሁኔታንና የሰብል መረጃን ይመልከቱ።'
         : 'Review your diagnosis history, local weather and maize crop information.'}
-      actions={
-        <Link
-          to="/farmer/diagnose"
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-emerald-900 hover:bg-emerald-800 dark:bg-emerald-700 dark:hover:bg-emerald-600 rounded-lg transition-colors whitespace-nowrap shrink-0"
-        >
-          <ScanLine className="w-3.5 h-3.5" />
-          <span>{t('diagnoseLeaf')}</span>
-        </Link>
-      }
     >
       <section
-        className="relative mb-7 overflow-hidden rounded-2xl bg-emerald-950 bg-cover bg-center shadow-lg"
-        style={{
-          backgroundImage: `linear-gradient(90deg, rgba(4, 32, 24, 0.88) 0%, rgba(4, 40, 28, 0.72) 48%, rgba(4, 40, 28, 0.18) 100%), url(${maizeBanner})`,
-          backgroundPosition: 'center 58%',
-        }}
+        className="relative mb-6 overflow-hidden rounded-[1.75rem] bg-[#14532D] text-white shadow-[0_16px_44px_rgba(20,83,45,0.18)] sm:mb-8"
       >
-        <div className="absolute inset-0 bg-gradient-to-t from-emerald-950/45 via-transparent to-white/5" aria-hidden="true" />
-        <div className="relative flex min-h-[230px] flex-col items-start justify-center gap-5 p-6 sm:min-h-[270px] sm:p-9 lg:p-11">
-          <div className="max-w-2xl">
-            <span className="inline-flex items-center rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-50 backdrop-blur-sm">
-              {language === 'am' ? 'የበቆሎ እርሻ አጋርዎ' : 'Your maize field companion'}
+        <img
+          src={maizeBanner640}
+          srcSet={`${maizeBanner640} 640w, ${maizeBanner1280} 1280w`}
+          sizes="100vw"
+          alt=""
+          aria-hidden="true"
+          loading="eager"
+          fetchPriority="high"
+          decoding="async"
+          className="absolute inset-0 h-full w-full object-cover object-[center_58%]"
+        />
+        <div
+          aria-hidden="true"
+          className="absolute inset-0"
+          style={{
+            backgroundImage: 'linear-gradient(90deg, rgba(20, 83, 45, 0.96) 0%, rgba(20, 83, 45, 0.91) 54%, rgba(20, 83, 45, 0.74) 100%)',
+          }}
+        />
+        <div className="relative grid min-h-[340px] gap-7 p-5 sm:min-h-[300px] sm:grid-cols-[1.2fr_0.8fr] sm:items-center sm:gap-8 sm:p-8 lg:p-10">
+          <div className="min-w-0">
+            <span className="inline-flex items-center rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-50 ring-1 ring-white/15">
+              {language === 'am' ? 'የእርሻ ሁኔታዎ' : 'Your field at a glance'}
             </span>
-            <h2 className="mt-4 text-3xl font-bold tracking-tight text-white font-display sm:text-4xl">
-              {language === 'am' ? 'እንኳን ደህና መጡ' : 'Welcome back'}{user?.full_name ? `, ${user.full_name}` : ''}
+            <h2 className="mt-4 break-words text-[1.7rem] font-bold leading-tight tracking-tight text-white font-display sm:text-4xl">
+              {language === 'am' ? 'እንኳን ደህና መጡ' : 'Hello'}{user?.full_name ? `, ${user.full_name}` : ''}
             </h2>
-            <p className="mt-3 max-w-xl text-sm leading-relaxed text-emerald-50/95 sm:text-base">
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-emerald-50/90 sm:text-base">
               {language === 'am'
-                ? 'የበቆሎ ቅጠልዎን ይመርምሩ፣ የእርሻ ሁኔታዎን ይከታተሉ፣ የተመረጡ ምክሮችንም ያግኙ።'
-                : 'Check your maize leaves, follow local field conditions, and get practical guidance for your farm.'}
+                ? 'የበቆሎ ቅጠልዎን ይመርምሩ እና ለእርሻዎ ተግባራዊ ምክር ያግኙ።'
+                : 'Check a maize leaf and get practical guidance for your farm.'}
             </p>
+            <Link
+              to="/farmer/diagnose"
+              className="mt-5 inline-flex min-h-12 items-center gap-2.5 rounded-xl bg-white px-5 py-3 text-sm font-bold text-[#14532D] shadow-lg shadow-emerald-950/10 transition hover:bg-lime-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            >
+              <ScanLine className="h-5 w-5" />
+              <span>{t('diagnoseMaizeLeaf')}</span>
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
-          <Link
-            to="/farmer/diagnose"
-            className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-emerald-950 shadow-sm transition hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-          >
-            <ScanLine className="h-4 w-4" />
-            <span>{t('diagnoseLeaf')}</span>
-            <ArrowRight className="h-4 w-4" />
-          </Link>
+          <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-1">
+            <div className="min-w-0 rounded-2xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur-sm">
+              <p className="flex items-center gap-2 text-xs font-medium text-emerald-100">
+                <MapPin className="h-4 w-4 shrink-0" />
+                {language === 'am' ? 'አካባቢ' : 'Farm location'}
+              </p>
+              <p className="mt-2 break-words text-sm font-semibold text-white">
+                {farmerProfile?.woreda || user?.woreda || farmerProfile?.region || user?.region || (language === 'am' ? 'አልተዘጋጀም' : 'Not set')}
+              </p>
+              {(farmerProfile?.region || user?.region) && (farmerProfile?.woreda || user?.woreda) && (
+                <p className="mt-0.5 truncate text-xs text-emerald-100/80">{farmerProfile?.region || user?.region}</p>
+              )}
+            </div>
+            <div className="min-w-0 rounded-2xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur-sm">
+              <p className="flex items-center gap-2 text-xs font-medium text-emerald-100">
+                <CloudSun className="h-4 w-4 shrink-0" />
+                {language === 'am' ? 'የአየር ሁኔታ' : 'Local weather'}
+              </p>
+              <p className="mt-2 break-words text-sm font-semibold text-white">
+                {weather && (weather.temperature !== undefined || weather.temp !== undefined)
+                  ? `${weather.temperature ?? weather.temp}°C`
+                  : weatherError || (language === 'am' ? 'አይገኝም' : 'Unavailable')}
+              </p>
+              {weather && (
+                <p className="mt-0.5 truncate text-xs text-emerald-100/80">
+                  {weather.description || weather.condition || weather.city || weather.woreda || ''}
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       </section>
-      {/* Quick Action Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <Link
-          to="/farmer/diagnose"
-          className="rounded-xl border border-emerald-800/30 dark:border-emerald-700/40 bg-emerald-900 text-white p-5 flex flex-col justify-between hover:bg-emerald-800 transition-colors"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-emerald-200">Primary Action</span>
-            <ScanLine className="w-5 h-5 text-amber-300" />
-          </div>
-          <div className="mt-4">
-            <h2 className="text-base font-bold font-display">{t('diagnoseLeaf')}</h2>
-            <p className="mt-1 text-xs text-emerald-100/90">
-              Upload a leaf photo for AI classification & Grad-CAM
-            </p>
-          </div>
-        </Link>
 
+      <div className="mb-7 grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         <Link
           to="/farmer/history"
-          className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-5 flex flex-col justify-between hover:border-stone-300 dark:hover:border-stone-700 transition-colors"
+          className="farmer-card flex min-h-32 min-w-0 flex-col justify-between p-4 transition hover:-translate-y-0.5 hover:shadow-md sm:p-5"
         >
           <div className="flex items-center justify-between text-xs text-stone-500 dark:text-stone-400">
             <span>Saved Records</span>
             <History className="w-4 h-4 text-emerald-800 dark:text-emerald-400" />
           </div>
           <div className="mt-4">
-            <h2 className="text-base font-bold text-stone-900 dark:text-stone-100 font-display">
+            <h2 className="break-words text-sm font-bold text-stone-900 dark:text-stone-100 font-display sm:text-base">
               {t('navHistory')}
             </h2>
             <p className="mt-1 text-xs text-stone-600 dark:text-stone-400 tabular-nums">
@@ -217,14 +313,14 @@ export const FarmerDashboardPage: React.FC = () => {
 
         <Link
           to="/farmer/weather"
-          className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-5 flex flex-col justify-between hover:border-stone-300 dark:hover:border-stone-700 transition-colors"
+          className="farmer-card flex min-h-32 min-w-0 flex-col justify-between p-4 transition hover:-translate-y-0.5 hover:shadow-md sm:p-5"
         >
           <div className="flex items-center justify-between text-xs text-stone-500 dark:text-stone-400">
             <span>Field Conditions</span>
             <CloudSun className="w-4 h-4 text-amber-600 dark:text-amber-400" />
           </div>
           <div className="mt-4">
-            <h2 className="text-base font-bold text-stone-900 dark:text-stone-100 font-display">
+            <h2 className="break-words text-sm font-bold text-stone-900 dark:text-stone-100 font-display sm:text-base">
               {t('navWeather')}
             </h2>
             <p className="mt-1 text-xs text-stone-600 dark:text-stone-400 tabular-nums">
@@ -236,15 +332,33 @@ export const FarmerDashboardPage: React.FC = () => {
         </Link>
 
         <Link
+          to="/farmer/calendar"
+          className="farmer-card flex min-h-32 min-w-0 flex-col justify-between p-4 transition hover:-translate-y-0.5 hover:shadow-md sm:p-5"
+        >
+          <div className="flex items-center justify-between text-xs text-stone-500 dark:text-stone-400">
+            <span>{language === 'am' ? 'የአሁኑ የሰብል ደረጃ' : 'Current crop stage'}</span>
+            <Calendar className="h-4 w-4 text-emerald-800 dark:text-emerald-400" />
+          </div>
+          <div className="mt-4">
+            <h2 className="break-words text-sm font-bold text-stone-900 dark:text-stone-100 font-display sm:text-base">
+              {currentCropStage?.label || t('navCalendar')}
+            </h2>
+            <p className="mt-1 line-clamp-2 text-xs text-stone-600 dark:text-stone-400">
+              {currentCropStage?.activities?.[0] || (language === 'am' ? 'የሰብል ምክሮችን ይመልከቱ' : 'View stage-based crop guidance')}
+            </p>
+          </div>
+        </Link>
+
+        <Link
           to="/farmer/discussion"
-          className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-5 flex flex-col justify-between hover:border-stone-300 dark:hover:border-stone-700 transition-colors"
+          className="farmer-card flex min-h-32 min-w-0 flex-col justify-between p-4 transition hover:-translate-y-0.5 hover:shadow-md sm:p-5"
         >
           <div className="flex items-center justify-between text-xs text-stone-500 dark:text-stone-400">
             <span>Extension Support</span>
             <MessageSquare className="w-4 h-4 text-emerald-800 dark:text-emerald-400" />
           </div>
           <div className="mt-4">
-            <h2 className="text-base font-bold text-stone-900 dark:text-stone-100 font-display">
+            <h2 className="break-words text-sm font-bold text-stone-900 dark:text-stone-100 font-display sm:text-base">
               {t('navDiscussion')}
             </h2>
             <p className="mt-1 text-xs text-stone-600 dark:text-stone-400">
@@ -259,26 +373,26 @@ export const FarmerDashboardPage: React.FC = () => {
         {/* Left Column: Recent Diagnoses & Community */}
         <div className="lg:col-span-7 space-y-6">
           <section
-            role={history.length > 0 ? 'link' : undefined}
-            tabIndex={history.length > 0 ? 0 : undefined}
-            aria-label={language === 'am' ? 'የቅርብ ጊዜ ምርመራዎች፤ ካርዱን ያግብሩ የምርመራ ቁጥር 44ን ለመክፈት' : 'Recent leaf diagnoses. Activate the card to open diagnosis record 44.'}
+            role={recentDiagnosisId !== undefined && recentDiagnosisId !== null ? 'link' : undefined}
+            tabIndex={recentDiagnosisId !== undefined && recentDiagnosisId !== null ? 0 : undefined}
+            aria-label={language === 'am' ? 'የቅርብ ጊዜ ምርመራዎች፤ የቅርብ ጊዜውን ምርመራ ለመክፈት ካርዱን ያግብሩ' : 'Recent leaf diagnoses. Activate the card to open the latest diagnosis.'}
             onClick={(event) => {
-              if (!history.length || (event.target as HTMLElement).closest('a, button')) return;
-              navigate('/farmer/history/44');
+              if (recentDiagnosisId === undefined || recentDiagnosisId === null || (event.target as HTMLElement).closest('a, button')) return;
+              navigate(`/farmer/history/${encodeURIComponent(String(recentDiagnosisId))}`);
             }}
             onKeyDown={(event) => {
-              if (!history.length || event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+              if (recentDiagnosisId === undefined || recentDiagnosisId === null || event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
               event.preventDefault();
-              navigate('/farmer/history/44');
+              navigate(`/farmer/history/${encodeURIComponent(String(recentDiagnosisId))}`);
             }}
-            className={`overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition dark:border-stone-800 dark:bg-[#121A16] ${history.length > 0 ? 'cursor-pointer hover:border-emerald-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 dark:hover:border-emerald-800' : ''}`}
+            className={`farmer-card overflow-hidden transition ${history.length > 0 ? 'cursor-pointer hover:border-emerald-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 dark:hover:border-emerald-800' : ''}`}
           >
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 bg-stone-50/70 px-5 py-4 dark:border-stone-800 dark:bg-stone-900/30 sm:px-6">
               <div>
                 <h2 className="text-lg font-bold text-stone-900 dark:text-stone-100 font-display">Recent Leaf Diagnoses</h2>
-                <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">Click this card to open diagnosis #44, or select a record below.</p>
+                <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">Open the latest diagnosis or select a record below.</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
                   onClick={loadDashboardData}
@@ -315,7 +429,7 @@ export const FarmerDashboardPage: React.FC = () => {
                       <Link
                         to={`/farmer/history/${id}`}
                         aria-label={`Open diagnosis details for ${item.disease_class || item.class_name || 'leaf diagnosis'}`}
-                        className="flex min-w-0 flex-1 items-center gap-3 rounded-xl p-2.5 outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 sm:gap-4 sm:p-3"
+                        className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl p-2.5 outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 sm:gap-4 sm:p-3"
                       >
                         <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${index === 0 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300' : 'bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300'}`}>
                           <ScanLine className="h-5 w-5" />
@@ -374,7 +488,7 @@ export const FarmerDashboardPage: React.FC = () => {
                 </Link>
               </div>
             ) : (
-              <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] divide-y divide-stone-200 dark:divide-stone-800">
+              <div className="farmer-card divide-y divide-stone-100 overflow-hidden dark:divide-stone-800">
                 {posts.map((post) => (
                   <div key={String(post.id)} className="p-4">
                     <div className="flex items-center gap-2 text-xs text-stone-500 dark:text-stone-400">
@@ -400,7 +514,7 @@ export const FarmerDashboardPage: React.FC = () => {
         {/* Right Column: Profile Completeness, Weather, Calendar & Offline Queue */}
         <div className="lg:col-span-5 space-y-6">
           {/* Profile & Location Status */}
-          <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-6">
+          <div className="farmer-card min-w-0 p-4 sm:p-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-medium text-emerald-800 dark:text-emerald-400">
                 <UserCheck className="w-4 h-4" />
@@ -435,7 +549,7 @@ export const FarmerDashboardPage: React.FC = () => {
           </div>
 
           {/* Weather Preview Card */}
-          <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-6">
+          <div className="farmer-card min-w-0 p-4 sm:p-6">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100 font-display">
                 Local Farm Weather
@@ -451,7 +565,8 @@ export const FarmerDashboardPage: React.FC = () => {
               <div className="mt-4">
                 <div className="flex items-baseline justify-between">
                   <span className="text-3xl font-bold font-mono tabular-nums text-stone-900 dark:text-stone-100">
-                    {weather.temperature ?? weather.temp ?? '—'}°C
+                    {weather.temperature ?? weather.temp ?? t('calendarUnavailable')}
+                    {weather.temperature !== undefined || weather.temp !== undefined ? '°C' : ''}
                   </span>
                   <span className="text-xs text-stone-600 dark:text-stone-400">
                     {weather.city || weather.woreda || weather.region || 'Configured Location'}
@@ -470,7 +585,7 @@ export const FarmerDashboardPage: React.FC = () => {
           </div>
 
           {/* Crop Calendar Preview */}
-          <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-6">
+          <div className="farmer-card min-w-0 p-4 sm:p-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-emerald-800 dark:text-emerald-400" />
@@ -485,18 +600,18 @@ export const FarmerDashboardPage: React.FC = () => {
                 View Schedule
               </Link>
             </div>
-            {calendarStages.length > 0 ? (
-              <div className="mt-3 space-y-2">
-                {calendarStages.slice(0, 2).map((stage, idx) => (
-                  <div key={idx} className="text-xs border-t border-stone-100 dark:border-stone-800 pt-2">
-                    <p className="font-semibold text-stone-900 dark:text-stone-100">
-                      {stage.stage_name || stage.name || stage.phase}
-                    </p>
-                    <p className="text-stone-500 dark:text-stone-400">
-                      {Array.isArray(stage.months) ? stage.months.join(', ') : stage.months || stage.description}
-                    </p>
-                  </div>
-                ))}
+            {currentCropStage ? (
+              <div className="mt-4 rounded-2xl bg-emerald-50/80 p-4 dark:bg-emerald-950/25">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">
+                  {language === 'am' ? 'የአሁኑ ደረጃ' : 'Current growth stage'}
+                </p>
+                <p className="mt-1 break-words text-base font-bold text-stone-900 dark:text-stone-100">
+                  {currentCropStage.label}
+                </p>
+                <p className="mt-1 text-xs text-stone-600 dark:text-stone-400">
+                  {currentCropStage.month_name}
+                  {currentCropStage.activities?.[0] ? ` · ${currentCropStage.activities[0]}` : ''}
+                </p>
               </div>
             ) : (
               <p className="mt-3 text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
@@ -505,8 +620,40 @@ export const FarmerDashboardPage: React.FC = () => {
             )}
           </div>
 
+          {(upcomingReminders.length > 0 || calendar?.regional_guidance) && (
+            <section className="farmer-card min-w-0 p-4 sm:p-6" aria-label={language === 'am' ? 'የእርሻ ምክሮችና ማሳሰቢያዎች' : 'Field guidance and reminders'}>
+              <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100 font-display">
+                {language === 'am' ? 'ለእርሻዎ የተመረጡ ምክሮች' : 'Guidance for your farm'}
+              </h3>
+              {calendar?.regional_guidance && (
+                <p className="mt-2 break-words text-sm leading-relaxed text-stone-600 dark:text-stone-300">
+                  {calendar.regional_guidance}
+                </p>
+              )}
+              {upcomingReminders.length > 0 && (
+                <ul className="mt-4 space-y-2">
+                  {upcomingReminders.slice(0, 3).map((reminder) => (
+                    <li key={`${reminder.activity_key}-${reminder.scheduled_date}`} className="flex min-w-0 items-start gap-3 rounded-2xl bg-[#F7F8F4] p-3 dark:bg-stone-900/70">
+                      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-lime-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                        <Calendar className="h-4 w-4" aria-hidden="true" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block break-words text-sm font-semibold text-stone-800 dark:text-stone-200">
+                          {language === 'am' ? reminder.title_am : reminder.title}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-stone-500 dark:text-stone-400">
+                          {formatDateTime(reminder.scheduled_date)}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+
           {/* Offline Synchronization Status */}
-          <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-6">
+          <div className="farmer-card min-w-0 p-4 sm:p-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <WifiOff className="w-4 h-4 text-stone-600 dark:text-stone-400" />
@@ -518,15 +665,15 @@ export const FarmerDashboardPage: React.FC = () => {
                 to="/farmer/diagnose"
                 className="text-xs font-medium text-emerald-800 dark:text-emerald-400 hover:underline"
               >
-                Manage Queue
+                {t('offlineSyncQueueTitle')}
               </Link>
             </div>
             <p className="mt-2 text-xs text-stone-600 dark:text-stone-400 leading-relaxed tabular-nums">
               {offlineQueue.length === 0
-                ? 'No offline leaf images currently queued on this device.'
-                : `${offlineQueue.filter((i) => i.status === 'queued').length} queued · ${
-                    offlineQueue.filter((i) => i.status === 'failed').length
-                  } failed · ${offlineQueue.filter((i) => i.status === 'succeeded').length} synced`}
+                ? t('noOfflineDiagnoses')
+                : `${offlineQueue.filter((record) => record.sync_status === 'pending').length} ${t('pendingDiagnosesLabel')} · ${
+                    offlineQueue.filter((record) => record.sync_status === 'synced').length
+                  } ${t('synchronizedDiagnosesCount')}`}
             </p>
           </div>
         </div>

@@ -23,6 +23,8 @@ Project: AI Maize Disease Detection System
 """
 
 from pathlib import Path
+import json
+import threading
 
 import cv2
 import numpy as np
@@ -66,6 +68,16 @@ class ImageValidator:
     # Minimum Laplacian variance.
     # Very small values indicate an excessively blurry image.
     MIN_BLUR_VARIANCE = 25.0
+    VALIDITY_ARTIFACTS_DIR = (
+        Path(__file__).resolve().parents[1]
+        / "validity_classifier"
+        / "artifacts"
+    )
+    VALIDITY_CONFIG_PATH = VALIDITY_ARTIFACTS_DIR / "class_mapping.json"
+    VALIDITY_MODEL_PATH = VALIDITY_ARTIFACTS_DIR / "maize_validity_best.keras"
+    _validity_model = None
+    _validity_config: dict | None = None
+    _validity_model_lock = threading.Lock()
 
     # ---------------------------------------------------------
     # Basic validation
@@ -205,8 +217,123 @@ class ImageValidator:
         # -----------------------------------------------------
 
         ImageValidator._validate_visual_quality(image)
+        ImageValidator._validate_maize_leaf(image)
 
         return image
+
+    @classmethod
+    def _load_validity_model(cls):
+        if cls._validity_model is not None and cls._validity_config is not None:
+            return cls._validity_model, cls._validity_config
+
+        with cls._validity_model_lock:
+            if cls._validity_model is not None and cls._validity_config is not None:
+                return cls._validity_model, cls._validity_config
+
+            if not cls.VALIDITY_CONFIG_PATH.is_file():
+                raise InvalidImageError(
+                    "The maize-image validity configuration is unavailable."
+                )
+            if not cls.VALIDITY_MODEL_PATH.is_file():
+                raise InvalidImageError(
+                    "The maize-image validity model is unavailable."
+                )
+
+            try:
+                with cls.VALIDITY_CONFIG_PATH.open(
+                    "r",
+                    encoding="utf-8",
+                ) as config_file:
+                    config = json.load(config_file)
+
+                class_indices = config["class_indices"]
+                image_size = config["input_size"]
+                threshold = float(config["valid_probability_threshold"])
+                preprocessing = config["preprocessing"]
+                valid_index = class_indices["valid_maize_leaf"]
+
+                if (
+                    not isinstance(image_size, list)
+                    or len(image_size) != 2
+                    or any(not isinstance(size, int) or size <= 0 for size in image_size)
+                    or not isinstance(valid_index, int)
+                    or not 0 <= threshold <= 1
+                    or preprocessing
+                    != "tensorflow.keras.applications.mobilenet_v2.preprocess_input"
+                ):
+                    raise ValueError("Invalid maize-image validity configuration.")
+
+                import tensorflow as tf
+
+                model = tf.keras.models.load_model(
+                    cls.VALIDITY_MODEL_PATH,
+                    compile=False,
+                )
+                output_shape = model.output_shape
+                output_width = output_shape[-1] if isinstance(output_shape, tuple) else None
+                if output_width not in (1, len(class_indices)):
+                    raise ValueError(
+                        "The maize-image validity model has an unexpected output shape."
+                    )
+
+                cls._validity_model = model
+                cls._validity_config = config
+                return model, config
+            except InvalidImageError:
+                raise
+            except Exception as error:
+                raise InvalidImageError(
+                    f"Unable to load the maize-image validity model: {error}"
+                ) from error
+
+    @classmethod
+    def _validate_maize_leaf(cls, image_path: Path) -> None:
+        try:
+            model, config = cls._load_validity_model()
+            image_size = tuple(config["input_size"])
+            with Image.open(image_path) as source:
+                image = source.convert("RGB").resize(
+                    image_size,
+                    Image.Resampling.NEAREST,
+                )
+
+            import tensorflow as tf
+
+            pixels = np.asarray(image, dtype=np.float32)
+            input_tensor = tf.keras.applications.mobilenet_v2.preprocess_input(
+                np.expand_dims(pixels, axis=0)
+            )
+            prediction = np.asarray(model.predict(input_tensor, verbose=0))
+            if prediction.ndim != 2 or prediction.shape[0] != 1:
+                raise ValueError(
+                    "The maize-image validity model returned an unexpected prediction shape."
+                )
+
+            if prediction.shape[1] == 1:
+                valid_probability = float(prediction[0, 0])
+            else:
+                valid_index = config["class_indices"]["valid_maize_leaf"]
+                if valid_index >= prediction.shape[1]:
+                    raise ValueError(
+                        "The maize-image validity model output does not match its class mapping."
+                    )
+                valid_probability = float(prediction[0, valid_index])
+
+            if not np.isfinite(valid_probability) or not 0 <= valid_probability <= 1:
+                raise ValueError(
+                    "The maize-image validity model returned an invalid probability."
+                )
+            if valid_probability < float(config["valid_probability_threshold"]):
+                raise InvalidImageError(
+                    "The image does not appear to show a maize leaf. "
+                    "Please select a clear photo of a maize leaf."
+                )
+        except InvalidImageError:
+            raise
+        except Exception as error:
+            raise InvalidImageError(
+                f"Unable to validate that the image shows a maize leaf: {error}"
+            ) from error
 
     # ---------------------------------------------------------
     # Visual quality validation

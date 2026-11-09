@@ -4,10 +4,45 @@ import { OutbreakAlert, UserRecord } from '../types/api';
 export interface CreateExtensionAgentPayload {
   full_name: string;
   phone_number: string;
-  password: string;
-  region: string;
-  woreda: string;
+  email: string;
+  employee_id: string;
+  organization: string;
+  region_id: string;
+  zone_id: string;
+  woreda_id: string;
+  verification_method: 'email' | 'sms';
+  professional_info_verified: true;
   preferred_language?: 'en' | 'am';
+}
+
+export interface AdminGeographyOption {
+  id: string;
+  name_en: string;
+  name_local?: string | null;
+  parent_id?: string;
+}
+
+export interface ExtensionAgentRecord {
+  id: number;
+  agent_id: number;
+  full_name: string;
+  phone_number: string;
+  email: string | null;
+  employee_id: string | null;
+  organization: string | null;
+  region: string | null;
+  region_id: string | null;
+  zone: string | null;
+  zone_id: string | null;
+  woreda: string | null;
+  woreda_id: string | null;
+  professional_info_verified: boolean;
+  professional_info_verified_by_id: number | null;
+  professional_info_verified_by: string | null;
+  professional_info_verified_at: string | null;
+  account_status: 'pending_activation' | 'active' | 'suspended';
+  is_active: boolean;
+  created_at?: string | null;
 }
 
 export interface ManualOutbreakPayload {
@@ -59,7 +94,13 @@ export const adminService = {
     return [];
   },
 
-  async getExtensionAgents(params?: { region?: string; woreda?: string; search?: string }): Promise<any[]> {
+  async getExtensionAgents(params?: {
+    region?: string;
+    woreda?: string;
+    search?: string;
+    account_status?: string;
+    professional_info_verified?: boolean;
+  }): Promise<ExtensionAgentRecord[]> {
     const res = await apiRequest<any>('/api/admin/extension-agents', { method: 'GET', params });
     if (Array.isArray(res)) return res;
     if (Array.isArray(res?.extension_agents)) return res.extension_agents;
@@ -73,6 +114,56 @@ export const adminService = {
       method: 'POST',
       body: payload,
     });
+  },
+
+  async getExtensionAgentGeography(
+    level: 'regions' | 'zones' | 'woredas',
+    parentId?: string,
+  ): Promise<AdminGeographyOption[]> {
+    const res = await apiRequest<any>('/api/admin/extension-agent-geography', {
+      method: 'GET',
+      params: { level, parent_id: parentId },
+    });
+    if (Array.isArray(res)) return res as AdminGeographyOption[];
+    if (Array.isArray(res?.items)) return res.items as AdminGeographyOption[];
+    return [];
+  },
+
+  async resendExtensionAgentActivation(userId: number): Promise<any> {
+    return apiRequest(
+      `/api/admin/extension-agents/${encodeURIComponent(String(userId))}/activation-code`,
+      { method: 'POST', body: {} },
+    );
+  },
+
+  async updateExtensionAgentStatus(
+    userId: number,
+    account_status: 'active' | 'suspended',
+  ): Promise<any> {
+    return apiRequest(
+      `/api/admin/extension-agents/${encodeURIComponent(String(userId))}/status`,
+      { method: 'PATCH', body: { account_status } },
+    );
+  },
+
+  async transferExtensionAgent(
+    userId: number,
+    assignment: { region_id: string; zone_id: string; woreda_id: string },
+  ): Promise<any> {
+    return apiRequest(
+      `/api/admin/extension-agents/${encodeURIComponent(String(userId))}/assignment`,
+      { method: 'PATCH', body: assignment },
+    );
+  },
+
+  async getExtensionAgentAssignmentHistory(userId: number): Promise<any[]> {
+    const res = await apiRequest<any>(
+      `/api/admin/extension-agents/${encodeURIComponent(String(userId))}/assignment-history`,
+      { method: 'GET' },
+    );
+    if (Array.isArray(res)) return res;
+    if (Array.isArray(res?.items)) return res.items;
+    return [];
   },
 
   async updateUserStatus(userId: string | number, is_active: boolean): Promise<any> {

@@ -17,6 +17,7 @@ import { PublicLayout } from '../components/layout/PublicLayout';
 import { getDefaultHomeForRole } from '../components/layout/ProtectedRoute';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
+import { PwaInstallEntry } from '../components/common/PwaInstallEntry';
 import heroFarmImg from '../assets/images/hero_ethiopian_maize_farm_1791572380074.jpg';
 import leafInspectionImg from '../assets/images/maize_leaf_inspection_1791572392418.jpg';
 import extensionFieldImg from '../assets/images/extension_advisory_field_1791572402850.jpg';
@@ -122,6 +123,8 @@ export const LandingPage: React.FC = () => {
                 {t('learnHowItWorks')}
               </a>
             </div>
+
+            <PwaInstallEntry />
 
             <div className="mt-10 pt-6 border-t border-stone-200 dark:border-stone-800 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-stone-600 dark:text-stone-400">
               <span>MobileNetV2 Classification</span>

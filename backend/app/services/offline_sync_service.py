@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +66,7 @@ class OfflineSyncService:
     }
 
     MAX_ATTEMPTS = 3
+    RETRY_COOLDOWN = timedelta(hours=1)
 
     def __init__(self) -> None:
         """Initialize the offline synchronization service."""
@@ -327,6 +329,29 @@ class OfflineSyncService:
 
         return response
 
+    @classmethod
+    def _refresh_retry_budget(cls, record: OfflineSyncRecord) -> None:
+        if record.attempts < cls.MAX_ATTEMPTS:
+            return
+
+        last_attempt = record.updated_at
+        if last_attempt is None:
+            raise OfflineSyncError(
+                "Synchronization retry timing is unavailable."
+            )
+        if last_attempt.tzinfo is None:
+            last_attempt = last_attempt.replace(tzinfo=timezone.utc)
+
+        retry_at = last_attempt + cls.RETRY_COOLDOWN
+        seconds_until_retry = (retry_at - datetime.now(timezone.utc)).total_seconds()
+        if seconds_until_retry > 0:
+            raise OfflineSyncError(
+                "Maximum synchronization attempts have been reached. "
+                f"Retry automatically in {int(seconds_until_retry + 0.999)} seconds."
+            )
+
+        record.attempts = 0
+
     # =====================================================
     # Synchronize diagnosis
     # =====================================================
@@ -414,12 +439,8 @@ class OfflineSyncService:
                     "being processed."
                 )
 
-            # Enforce retry limit.
-            if existing_record.attempts >= self.MAX_ATTEMPTS:
-                raise OfflineSyncError(
-                    "Maximum synchronization attempts have "
-                    "been reached."
-                )
+            # Keep failures retryable after a cooldown without dropping the operation.
+            self._refresh_retry_budget(existing_record)
 
             record = existing_record
 

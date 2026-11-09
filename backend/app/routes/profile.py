@@ -39,7 +39,7 @@ from backend.app.models.user import User
 
 NOTIFICATION_CATEGORIES = ("crop_activity", "weather_alert", "soil_water_alert", "agricultural_advisory", "important_alerts")
 DEFAULT_NOTIFICATION_PREFERENCES = {
-    "categories": {key: {"in_app": True, "sms": True} for key in NOTIFICATION_CATEGORIES},
+    "categories": {key: {"in_app": True, "sms": True, "push": False} for key in NOTIFICATION_CATEGORIES},
     "reminder_days_before": 0,
     "quiet_hours": {"enabled": False, "start": "21:00", "end": "07:00"},
     "timezone": "Africa/Addis_Ababa",
@@ -62,7 +62,7 @@ def _valid_notification_preferences(value):
     categories = value.get("categories")
     if not isinstance(categories, dict) or set(categories) != set(NOTIFICATION_CATEGORIES):
         return False
-    if any(not isinstance(v, dict) or set(v) != {"in_app", "sms"} or any(not isinstance(v[k], bool) for k in ("in_app", "sms")) for v in categories.values()):
+    if any(not isinstance(v, dict) or set(v) != {"in_app", "sms", "push"} or any(not isinstance(v[k], bool) for k in ("in_app", "sms", "push")) for v in categories.values()):
         return False
     if type(value.get("reminder_days_before")) is not int or value["reminder_days_before"] not in (0, 1, 2, 3):
         return False

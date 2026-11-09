@@ -7,11 +7,22 @@
     --font-display: 'Plus Jakarta Sans', 'Noto Sans Ethiopic', system-ui, -apple-system, sans-serif;
     --font-sans: 'DM Sans', 'Noto Sans Ethiopic', system-ui, -apple-system, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
+    --color-forest: #14532d;
+    --color-field-green: #22a06b;
+    --color-leaf-lime: #a3d977;
+    --color-canvas: #f7f8f4;
+    --color-ink: #17231c;
+    --color-muted: #78847b;
   }
 
   html {
     font-family: var(--font-sans);
     scroll-behavior: smooth;
+  }
+
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid #15803d;
+    outline-offset: 2px;
   }
 
   h1, h2, h3, h4, .font-display {
@@ -20,6 +31,34 @@
 
   .font-mono, .tabular-nums {
     font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .farmer-card {
+    border: 1px solid rgb(226 232 226 / 72%);
+    border-radius: 1.5rem;
+    background: #fff;
+    box-shadow: 0 8px 24px rgb(23 35 28 / 5%);
+    transition: box-shadow 180ms ease, transform 180ms ease, border-color 180ms ease;
+  }
+
+  .dark .farmer-card {
+    border-color: rgb(51 65 56 / 70%);
+    background: #121a16;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+  }
+
+  .farmer-form input:not([type="checkbox"]),
+  .farmer-form select {
+    min-height: 2.75rem;
+    border-radius: 0.75rem;
+  }
+
+  .farmer-form input:not([type="checkbox"]):focus,
+  .farmer-form select:focus {
+    outline: 2px solid #22a06b;
+    outline-offset: 1px;
   }
 }
 
@@ -40,5 +79,12 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+}
+
+@media (max-width: 1023px) {
+  body {
+    background: var(--color-canvas);
   }
 }

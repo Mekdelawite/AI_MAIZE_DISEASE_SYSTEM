@@ -1,9 +1,8 @@
-const SHELL_CACHE = 'maizecare-shell-v2';
-const LEGACY_SHELL_CACHE = 'maizecare-shell-v1';
+const SHELL_CACHE = 'maizecare-shell-v3';
+const LEGACY_SHELL_CACHES = ['maizecare-shell-v1', 'maizecare-shell-v2'];
 const MODEL_CACHE = 'maizecare-maize-model-v1';
 const VALIDITY_MODEL_CACHE = 'maizecare-maize-validity-model-v1';
 const CRITICAL_ASSETS = '__MAIZECARE_CRITICAL_ASSETS__';
-const OPTIONAL_ASSETS = '__MAIZECARE_OPTIONAL_ASSETS__';
 
 const MODEL_ASSETS = [
   'models/maize/model.json',
@@ -42,50 +41,46 @@ self.addEventListener('install', (event) => {
     const entryResponse = await fetch(indexUrl.href, { cache: 'reload' }).catch(() => fetch(scopeRoot.href));
     await cacheShellResponse(entryResponse);
 
-    // Vite supplies the exact hashed JS/CSS output paths at build time. These
-    // are required to render the app, so do not activate an incomplete shell.
+    // Vite supplies the entry and offline-critical route dependency graph.
+    // Other route chunks and images are cached only when requested.
     await Promise.all(CRITICAL_ASSETS.map(async (fileName) => {
       const url = new URL(fileName, scopeRoot).href;
-      const response = await fetch(url, { cache: 'reload' });
+      const key = cacheKey(url);
+      if (await cache.match(key)) return;
+      const response = await fetch(url);
       if (!response.ok) throw new Error(`Unable to precache required app asset: ${fileName}`);
-      await cache.put(cacheKey(url), response);
+      await cache.put(key, response);
     }));
-    
-    // Precache both models so validity checks and diagnosis work offline.
+
+    // Keep model caches across app updates; bump the cache version when model
+    // contents change so unchanged weights are not downloaded again.
     const modelCache = await caches.open(MODEL_CACHE);
 
     await Promise.all(MODEL_ASSETS.map(async (fileName) => {
       const url = new URL(fileName, scopeRoot).href;
-      const response = await fetch(url, { cache: 'reload' });
+      const key = cacheKey(url);
+      if (await modelCache.match(key)) return;
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error(`Unable to cache required maize model file: ${fileName}`);
       }
 
-      await modelCache.put(cacheKey(url), response);
+      await modelCache.put(key, response);
     }));
 
     const validityModelCache = await caches.open(VALIDITY_MODEL_CACHE);
     await Promise.all(VALIDITY_MODEL_ASSETS.map(async (fileName) => {
       const url = new URL(fileName, scopeRoot).href;
-      const response = await fetch(url, { cache: 'reload' });
+      const key = cacheKey(url);
+      if (await validityModelCache.match(key)) return;
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error(`Unable to cache required maize validity model file: ${fileName}`);
       }
 
-      await validityModelCache.put(cacheKey(url), response);
-    }));
-
-    // Images and fonts improve the experience but must not block SW install.
-    await Promise.all(OPTIONAL_ASSETS.map(async (fileName) => {
-      try {
-        const url = new URL(fileName, scopeRoot).href;
-        const response = await fetch(url, { cache: 'reload' });
-        if (response.ok) await cache.put(cacheKey(url), response);
-      } catch {
-        // Retry on demand when the asset is requested later.
-      }
+      await validityModelCache.put(key, response);
     }));
 
     await self.skipWaiting();
@@ -96,8 +91,62 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     // Keep model and other application caches; remove only the known obsolete
     // shell after the complete v2 shell has installed successfully.
-    await caches.delete(LEGACY_SHELL_CACHE);
+    await Promise.all(LEGACY_SHELL_CACHES.map((cacheName) => caches.delete(cacheName)));
     await self.clients.claim();
+  })());
+});
+
+self.addEventListener('push', (event) => {
+  event.waitUntil((async () => {
+    let payload = {};
+    try {
+      const parsed = event.data ? event.data.json() : {};
+      payload = parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      payload = {};
+    }
+
+    const body = typeof payload.body === 'string' && payload.body
+      ? payload.body
+      : 'A new farm update is ready. Open MaizeCare AI to view it.';
+    const requestedUrl = typeof payload.url === 'string'
+      ? new URL(payload.url, self.location.origin)
+      : new URL('/farmer/dashboard', self.location.origin);
+    const targetUrl = requestedUrl.origin === self.location.origin &&
+      requestedUrl.pathname.startsWith('/farmer/')
+      ? requestedUrl.href
+      : new URL('/farmer/dashboard', self.location.origin).href;
+
+    await self.registration.showNotification('MaizeCare AI', {
+      body,
+      icon: new URL('maizecare-icon-192.png', scopeRoot).href,
+      badge: new URL('maizecare-icon-192.png', scopeRoot).href,
+      data: { url: targetUrl },
+    });
+  })());
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const requestedUrl = typeof event.notification.data?.url === 'string'
+      ? new URL(event.notification.data.url, self.location.origin)
+      : new URL('/farmer/dashboard', self.location.origin);
+    const targetUrl = requestedUrl.origin === self.location.origin &&
+      requestedUrl.pathname.startsWith('/farmer/')
+      ? requestedUrl.href
+      : new URL('/farmer/dashboard', self.location.origin).href;
+    const windows = await self.clients.matchAll({
+      type: 'window',
+      includeUncontrolled: true,
+    });
+    for (const client of windows) {
+      if (new URL(client.url).origin !== self.location.origin) continue;
+      const navigatedClient = await client.navigate(targetUrl);
+      await (navigatedClient || client).focus();
+      return;
+    }
+    await self.clients.openWindow(targetUrl);
   })());
 });
 

@@ -41,6 +41,9 @@ from backend.app.models.diagnosis_record import DiagnosisRecord
 from backend.app.models.extension_comment import ExtensionComment
 from backend.app.models.discussion_reply import DiscussionReply
 from backend.app.models.advisory_record import AdvisoryRecord
+from backend.app.models.extension_agent_assignment_history import ExtensionAgentAssignmentHistory
+from backend.app.models.administrative_division import GeographyRegion, GeographyZone, GeographyWoreda
+from backend.app.services.extension_agent_service import ExtensionAgentService
 
 
 # =========================================================
@@ -316,6 +319,8 @@ class AdminService:
         search: str | None = None,
         region: str | None = None,
         woreda: str | None = None,
+        account_status: str | None = None,
+        professional_info_verified: bool | None = None,
     ) -> list[dict[str, Any]]:
         """
         Retrieve all extension-agent accounts together
@@ -336,6 +341,9 @@ class AdminService:
                 db.or_(
                     User.full_name.ilike(pattern),
                     User.phone_number.ilike(pattern),
+                    ExtensionAgent.email.ilike(pattern),
+                    ExtensionAgent.employee_id.ilike(pattern),
+                    ExtensionAgent.organization.ilike(pattern),
                 )
             )
 
@@ -345,68 +353,165 @@ class AdminService:
         if woreda:
             agents = agents.filter(ExtensionAgent.woreda.ilike(f"%{woreda}%"))
 
-        agents = agents.order_by(User.created_at.desc()).all()
-
-        result: list[dict[str, Any]] = []
-
-        for agent in agents:
-
-            result.append(
-                {
-                    "agent_id": agent.user_id,
-                    "full_name": (
-                        agent.user.full_name
-                        if agent.user
-                        else None
-                    ),
-                    "phone_number": (
-                        agent.user.phone_number
-                        if agent.user
-                        else None
-                    ),
-                    "role": (
-                        agent.user.role
-                        if agent.user
-                        else "extension_agent"
-                    ),
-                    "preferred_language": (
-                        agent.user.preferred_language
-                        if agent.user
-                        else None
-                    ),
-                    "is_active": (
-                        bool(agent.user.is_active)
-                        if agent.user
-                        else False
-                    ),
-                    "region": agent.region,
-                    "woreda": agent.woreda,
-                    "specialization": (
-                        agent.specialization
-                    ),
-                    "certification_number": (
-                        agent.certification_number
-                    ),
-                    "created_at": (
-                        agent.user.created_at.isoformat()
-                        if (
-                            agent.user
-                            and agent.user.created_at
-                        )
-                        else None
-                    ),
-                    "last_login_at": (
-                        agent.user.last_login_at.isoformat()
-                        if (
-                            agent.user
-                            and agent.user.last_login_at
-                        )
-                        else None
-                    ),
-                }
+        if account_status:
+            agents = agents.filter(ExtensionAgent.account_status == account_status)
+        if professional_info_verified is not None:
+            agents = agents.filter(
+                ExtensionAgent.professional_info_verified
+                == professional_info_verified
             )
 
+        agents = agents.order_by(User.created_at.desc()).all()
+        result = []
+        for agent in agents:
+            row = ExtensionAgentService.agent_to_dict(agent)
+            row["id"] = agent.user_id
+            result.append(row)
         return result
+
+    @classmethod
+    def set_extension_agent_status(
+        cls,
+        user_id: int,
+        account_status: str,
+    ) -> dict[str, Any]:
+        if account_status not in {"active", "suspended"}:
+            raise InvalidUserStatusError(
+                "Extension-agent status must be active or suspended."
+            )
+        agent = (
+            ExtensionAgent.query
+            .filter_by(user_id=user_id)
+            .with_for_update()
+            .first()
+        )
+        if agent is None or agent.user is None:
+            raise AdminUserNotFoundError("Extension agent not found.")
+        if account_status == "active":
+            if (
+                agent.account_status != "suspended"
+                or not agent.region_id
+                or not agent.zone_id
+                or not agent.woreda_id
+            ):
+                raise InvalidUserStatusError(
+                    "Only assigned suspended agents can be reactivated."
+                )
+            agent.user.is_active = True
+        else:
+            if agent.account_status == "pending_activation":
+                raise InvalidUserStatusError(
+                    "Pending agents cannot be suspended or reactivated before activation."
+                )
+            agent.user.is_active = False
+        agent.account_status = account_status
+        try:
+            db.session.commit()
+        except Exception as error:
+            db.session.rollback()
+            raise AdminServiceError(
+                "Failed to update extension-agent status."
+            ) from error
+        return ExtensionAgentService.agent_to_dict(agent)
+
+    @classmethod
+    def transfer_extension_agent(
+        cls,
+        *,
+        user_id: int,
+        region_id: str,
+        zone_id: str,
+        woreda_id: str,
+        admin_id: int,
+    ) -> dict[str, Any]:
+        if any(
+            not isinstance(value, str) or not value.strip()
+            for value in (region_id, zone_id, woreda_id)
+        ):
+            raise ValueError("Region, zone, and woreda are required.")
+        if not isinstance(admin_id, int) or admin_id < 1:
+            raise ValueError("The transferring administrator is invalid.")
+
+        region_id = region_id.strip()
+        zone_id = zone_id.strip()
+        woreda_id = woreda_id.strip()
+
+        agent = (
+            ExtensionAgent.query
+            .filter_by(user_id=user_id)
+            .with_for_update()
+            .first()
+        )
+        if agent is None:
+            raise AdminUserNotFoundError("Extension agent not found.")
+        region = db.session.get(GeographyRegion, region_id)
+        zone = db.session.get(GeographyZone, zone_id)
+        woreda = db.session.get(GeographyWoreda, woreda_id)
+        if (
+            region is None
+            or zone is None
+            or woreda is None
+            or zone.region_id != region.id
+            or woreda.zone_id != zone.id
+        ):
+            raise ValueError(
+                "The selected region, zone, and woreda do not form a valid hierarchy."
+            )
+        if agent.woreda_id == woreda.id:
+            raise ValueError("The agent is already assigned to this woreda.")
+
+        try:
+            db.session.add(
+                ExtensionAgentAssignmentHistory(
+                    user_id=agent.user_id,
+                    previous_woreda_id=agent.woreda_id,
+                    new_woreda_id=woreda.id,
+                    changed_by_admin_id=admin_id,
+                )
+            )
+            agent.region_id = region.id
+            agent.zone_id = zone.id
+            agent.woreda_id = woreda.id
+            agent.region = region.name_en
+            agent.zone = zone.name_en
+            agent.woreda = woreda.name_en
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
+
+        return ExtensionAgentService.agent_to_dict(agent)
+
+    @staticmethod
+    def get_extension_agent_assignment_history(
+        user_id: int,
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": item.id,
+                "previous_woreda": (
+                    item.previous_woreda.name_en
+                    if item.previous_woreda
+                    else None
+                ),
+                "previous_woreda_id": item.previous_woreda_id,
+                "new_woreda": item.new_woreda.name_en,
+                "new_woreda_id": item.new_woreda_id,
+                "changed_by_admin_id": item.changed_by_admin_id,
+                "changed_by_admin": (
+                    item.changed_by_admin.full_name
+                    if item.changed_by_admin
+                    else None
+                ),
+                "changed_at": item.changed_at.isoformat(),
+            }
+            for item in (
+                ExtensionAgentAssignmentHistory.query
+                .filter_by(user_id=user_id)
+                .order_by(ExtensionAgentAssignmentHistory.changed_at.asc())
+                .all()
+            )
+        ]
 
     # =====================================================
     # UPDATE ACCOUNT STATUS

@@ -685,6 +685,96 @@ def auth_health():
             ),
         }
     )
+
+
+@auth_bp.post("/extension-agent/activation/verify")
+def verify_extension_agent_activation():
+    """Verify an admin-issued activation code before allowing password setup."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(
+            "INVALID_REQUEST",
+            "Request body must contain valid JSON.",
+            400,
+        )
+
+    contact = data.get("contact")
+    code = data.get("code")
+    if not contact or not code:
+        return error_response(
+            "VALIDATION_ERROR",
+            "The registered email or phone number and activation code are required.",
+            400,
+        )
+
+    try:
+        result = RegistrationOTPService.verify_extension_agent_activation_code(
+            contact=contact,
+            code=code,
+        )
+        return success_response(result)
+    except RegistrationOTPValidationError as exc:
+        return error_response(
+            "EXTENSION_AGENT_ACTIVATION_FAILED",
+            str(exc),
+            400,
+        )
+    except RegistrationOTPError:
+        current_app.logger.exception(
+            "Could not verify an extension-agent activation code."
+        )
+        return error_response(
+            "EXTENSION_AGENT_ACTIVATION_ERROR",
+            "Unable to verify the activation code.",
+            500,
+        )
+
+
+@auth_bp.post("/extension-agent/activation/complete")
+def complete_extension_agent_activation():
+    """Set an extension agent's password and activate the verified account."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(
+            "INVALID_REQUEST",
+            "Request body must contain valid JSON.",
+            400,
+        )
+
+    activation_token = data.get("activation_token")
+    password = data.get("password")
+    if not activation_token or not password:
+        return error_response(
+            "VALIDATION_ERROR",
+            "A verified activation session and password are required.",
+            400,
+        )
+
+    try:
+        RegistrationOTPService.complete_extension_agent_activation(
+            activation_token=activation_token,
+            password=password,
+        )
+        return success_response(
+            {"message": "Account activated. You can now sign in."}
+        )
+    except (RegistrationOTPError, AuthServiceError) as exc:
+        return error_response(
+            "EXTENSION_AGENT_ACTIVATION_FAILED",
+            str(exc),
+            400,
+        )
+    except Exception:
+        current_app.logger.error(
+            "Could not complete extension-agent activation."
+        )
+        return error_response(
+            "EXTENSION_AGENT_ACTIVATION_ERROR",
+            "Unable to activate the extension-agent account.",
+            500,
+        )
+
+
 @auth_bp.post("/password-reset/request")
 def request_password_reset():
     """

@@ -2,6 +2,7 @@ import type * as tfTypes from '@tensorflow/tfjs';
 import { offlineDiagnosisStore } from './offlineDiagnosisStore';
 const MODEL_URL = `${import.meta.env.BASE_URL}models/maize/model.json`;
 const MODEL_CACHE = 'maizecare-maize-model-v1';
+const SHELL_CACHE = 'maizecare-shell-v3';
 const CLASS_NAMES = [
   'Northern Leaf Blight',
   'Common Rust',
@@ -14,6 +15,13 @@ const VALIDITY_MODEL_CACHE = 'maizecare-maize-validity-model-v1';
 const VALIDITY_IMAGE_SIZE = 160;
 const VALID_MAIZE_THRESHOLD = 0.5;
 const validatedFiles = new WeakMap<File, Promise<void>>();
+
+export class InvalidMaizeLeafImageError extends Error {
+  constructor() {
+    super('This image does not appear to show a maize leaf.');
+    this.name = 'InvalidMaizeLeafImageError';
+  }
+}
 
 export interface LocalDiagnosisResult {
   className: (typeof CLASS_NAMES)[number];
@@ -57,7 +65,7 @@ async function readModelResource(
 
 async function cacheLoadedRuntimeAssets(): Promise<void> {
   if (!navigator.onLine || typeof caches === 'undefined') return;
-  const cache = await caches.open('maizecare-shell-v2');
+  const cache = await caches.open(SHELL_CACHE);
   const urls = performance
     .getEntriesByType('resource')
     .map((entry) => entry.name)
@@ -220,33 +228,27 @@ async function validateMaizeLeafImage(
   image: HTMLImageElement,
 ): Promise<void> {
   const model = await getValidityModel();
-  const canvas = document.createElement('canvas');
-  canvas.width = VALIDITY_IMAGE_SIZE;
-  canvas.height = VALIDITY_IMAGE_SIZE;
-
-  const context = canvas.getContext('2d', {
-    willReadFrequently: true,
-  });
+  const validationCanvas = document.createElement('canvas');
+  validationCanvas.width = VALIDITY_IMAGE_SIZE;
+  validationCanvas.height = VALIDITY_IMAGE_SIZE;
+  const context = validationCanvas.getContext('2d', { willReadFrequently: true });
 
   if (!context) {
-    throw new Error(
-      'This browser cannot prepare the image for validation.',
-    );
+    throw new Error('This browser cannot prepare the image for maize validation.');
   }
 
+  // Match the validator's bilinear resize without creating a full-resolution TensorFlow tensor.
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
-  context.drawImage(
-    image,
-    0,
-    0,
-    VALIDITY_IMAGE_SIZE,
-    VALIDITY_IMAGE_SIZE,
-  );
-
-  const pixels = tf.browser.fromPixels(canvas).toFloat();
-  const input = pixels.div(127.5).sub(1).expandDims(0);
-  pixels.dispose();
+  context.drawImage(image, 0, 0, VALIDITY_IMAGE_SIZE, VALIDITY_IMAGE_SIZE);
+  const input = tf.tidy(() => {
+    return tf.browser
+      .fromPixels(validationCanvas)
+      .toFloat()
+      .div(127.5)
+      .sub(1)
+      .expandDims(0);
+  });
 
   let output: tfTypes.Tensor | tfTypes.Tensor[] | tfTypes.NamedTensorMap | undefined;
 
@@ -260,8 +262,13 @@ async function validateMaizeLeafImage(
     } else if (output instanceof tf.Tensor) {
       scoreTensor = output;
     } else {
-      const namedOutput = output as tfTypes.NamedTensorMap;
-      scoreTensor = namedOutput.output_0;
+      const namedOutputs = Object.values(output as tfTypes.NamedTensorMap);
+      if (namedOutputs.length !== 1) {
+        throw new Error(
+          'The maize-image validation model returned an unexpected number of predictions.',
+        );
+      }
+      scoreTensor = namedOutputs[0];
     }
 
     if (!scoreTensor) {
@@ -271,11 +278,9 @@ async function validateMaizeLeafImage(
     }
 
     const scores = Array.from(await scoreTensor.data());
-    console.log('[MAIZE VALIDITY MODEL SCORE]', scores[0]);
-
     if (
-      scores.length !== 1 ||
-      !Number.isFinite(scores[0]) ||
+    scores.length !== 1 ||
+    !Number.isFinite(scores[0]) ||
       scores[0] < 0 ||
       scores[0] > 1
     ) {
@@ -285,9 +290,7 @@ async function validateMaizeLeafImage(
     }
 
     if (scores[0] < VALID_MAIZE_THRESHOLD) {
-      throw new Error(
-        'This image does not appear to show a maize leaf. Please select a clear photo of a maize leaf and try again.',
-      );
+      throw new InvalidMaizeLeafImageError();
     }
   } finally {
     input.dispose();
@@ -365,6 +368,13 @@ export const localDiagnosisService = {
   async predict(
     file: File,
     userId?: string | number,
+    options: {
+      queueForSync?: boolean;
+      operationId?: string;
+      language?: 'en' | 'am';
+      explain?: boolean;
+      createdAt?: string;
+    } = {},
   ): Promise<LocalDiagnosisResult> {
     await this.validateImage(file);
     const tf = await getTensorflow();
@@ -402,13 +412,22 @@ export const localDiagnosisService = {
         probabilities,
       };
 
-      // Persist predictions made while offline. Online submissions remain under the existing backend workflow.
-      if (
-        !navigator.onLine &&
-        ((typeof userId === 'number' && Number.isFinite(userId)) ||
-          (typeof userId === 'string' && userId.trim()))
-      ) {
-        await offlineDiagnosisStore.save(result, file, userId);
+      if (options.queueForSync ?? !navigator.onLine) {
+        if (
+          !(
+            (typeof userId === 'number' && Number.isFinite(userId)) ||
+            (typeof userId === 'string' && userId.trim())
+          )
+        ) {
+          throw new Error('An authenticated farmer is required to save this diagnosis for synchronization.');
+        }
+
+        await offlineDiagnosisStore.save(result, file, userId, {
+          operationId: options.operationId,
+          language: options.language,
+          explain: options.explain,
+          createdAt: options.createdAt,
+        });
       }
 
       return result;

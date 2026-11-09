@@ -1,7 +1,7 @@
 export type UserRole = 'farmer' | 'extension_agent' | 'admin';
 
 export interface FarmerNotificationPreferences {
-  categories: Record<'crop_activity' | 'weather_alert' | 'soil_water_alert' | 'agricultural_advisory' | 'important_alerts', { in_app: boolean; sms: boolean }>;
+  categories: Record<'crop_activity' | 'weather_alert' | 'soil_water_alert' | 'agricultural_advisory' | 'important_alerts', { in_app: boolean; sms: boolean; push: boolean }>;
   reminder_days_before: 0 | 1 | 2 | 3;
   quiet_hours: { enabled: boolean; start: string; end: string };
   timezone: string;

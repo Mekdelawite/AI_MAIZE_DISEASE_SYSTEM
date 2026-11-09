@@ -29,7 +29,6 @@ coverage/
 
 # Datasets, uploads, logs, and generated reports
 ml_model/dataset/
-ml_model/models/*.h5
 ml_model/explainability/outputs/
 reports/
 uploads/
@@ -78,3 +77,8 @@ Thumbs.db
 
 # Private application letters and personal photos
 /database/
+# Local project backups
+/backups/
+
+# Keep only the active disease model in Git
+ml_model/models/final_model.h5

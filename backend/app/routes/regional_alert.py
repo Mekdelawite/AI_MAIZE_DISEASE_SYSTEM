@@ -80,6 +80,7 @@ def send_regional_alert():
     posts = {}
     app_notifications_created = 0
     app_notification_error = None
+    app_notifications = []
     sms_accepted = sms_pending = sms_failed = sms_duplicates_skipped = 0
     sms_results = []
     duplicate_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
@@ -102,7 +103,8 @@ def send_regional_alert():
                         db.session.flush()
                     posts[region] = post
                 for region, user, _profile in recipients:
-                    if not CropCalendarNotificationService.preferences(_profile)["categories"]["important_alerts"]["in_app"]:
+                    channels = CropCalendarNotificationService.preferences(_profile)["categories"]["important_alerts"]
+                    if not (channels["in_app"] or channels["push"]):
                         continue
                     existing = FarmerNotification.query.filter_by(
                         user_id=user.id,
@@ -114,16 +116,30 @@ def send_regional_alert():
                     ).filter(FarmerNotification.created_at >= duplicate_cutoff).first()
                     if existing is not None:
                         continue
-                    db.session.add(FarmerNotification(user_id=user.id,
+                    notification = FarmerNotification(user_id=user.id,
                         title_en=f"Regional alert: {region}", title_am=f"የክልል ማስጠንቀቂያ: {region}",
                         message_en=message_en, message_am=message_am, region=region,
                         notification_type="regional_alert",
-                        discussion_post_id=posts[region].id))
+                        discussion_post_id=posts[region].id)
+                    db.session.add(notification)
+                    app_notifications.append((notification, _profile))
                     app_notifications_created += 1
                 db.session.commit()
+                from backend.app.services.web_push_service import WebPushService
+
+                for notification, _profile in app_notifications:
+                    try:
+                        WebPushService.enqueue_notification(notification)
+                    except Exception:
+                        db.session.rollback()
+                        current_app.logger.exception(
+                            "Could not enqueue regional push (farmer_id=%s).",
+                            notification.user_id,
+                        )
             except Exception:
                 db.session.rollback()
                 app_notifications_created = 0
+                app_notifications = []
                 app_notification_error = "Could not persist app notifications."
                 current_app.logger.exception("Regional app notification persistence failed.")
 
@@ -208,9 +224,21 @@ def list_farmer_notifications():
     if error:
         return error
     try:
-        items = FarmerNotification.query.filter_by(user_id=user_id).order_by(
-            FarmerNotification.created_at.desc(), FarmerNotification.id.desc()
-        ).all()
+        profile = db.session.get(FarmerProfile, user_id)
+        if profile is None:
+            return jsonify({"notifications": []})
+        from backend.app.services.crop_calendar_notification_service import (
+            CropCalendarNotificationService,
+        )
+
+        visible_items = [
+            item for item in FarmerNotification.query.filter_by(user_id=user_id).order_by(
+                FarmerNotification.created_at.desc(), FarmerNotification.id.desc()
+            ).all()
+            if CropCalendarNotificationService.preferences(profile)["categories"][
+                CropCalendarNotificationService.CATEGORY_MAP.get(item.notification_type, "important_alerts")
+            ]["in_app"]
+        ]
         farmer = db.session.get(User, user_id)
         language = "am" if str(farmer.preferred_language).lower().startswith("am") else "en"
         return jsonify({"notifications": [{"id": item.id,
@@ -219,7 +247,7 @@ def list_farmer_notifications():
             "region": item.region, "notification_type": item.notification_type,
             "outbreak_alert_id": item.outbreak_alert_id, "is_read": item.is_read,
             "discussion_post_id": item.discussion_post_id,
-            "created_at": item.created_at.isoformat() if item.created_at else None} for item in items]})
+            "created_at": item.created_at.isoformat() if item.created_at else None} for item in visible_items]})
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Failed to load farmer notifications (user_id=%s).", user_id)
@@ -233,7 +261,27 @@ def get_unread_notification_count():
     if error:
         return error
     try:
-        count = FarmerNotification.query.filter_by(user_id=user_id, is_read=False).count()
+        profile = db.session.get(FarmerProfile, user_id)
+        if profile is None:
+            return jsonify({"success": True, "count": 0})
+        from backend.app.services.crop_calendar_notification_service import (
+            CropCalendarNotificationService,
+        )
+
+        prefs = CropCalendarNotificationService.preferences(profile)
+        unread_items = FarmerNotification.query.filter_by(
+            user_id=user_id,
+            is_read=False,
+        ).all()
+        count = sum(
+            prefs["categories"][
+                CropCalendarNotificationService.CATEGORY_MAP.get(
+                    item.notification_type,
+                    "important_alerts",
+                )
+            ]["in_app"]
+            for item in unread_items
+        )
         return jsonify({"success": True, "count": count})
     except Exception:
         db.session.rollback()

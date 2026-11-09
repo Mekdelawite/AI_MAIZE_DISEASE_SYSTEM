@@ -36,7 +36,17 @@ from flask import (
     request,
 )
 
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import get_jwt_identity, jwt_required
+from sqlalchemy import func
+
+from backend.app.extensions import db
+from backend.app.models.administrative_division import (
+    GeographyRegion,
+    GeographyZone,
+    GeographyWoreda,
+)
+from backend.app.models.extension_agent import ExtensionAgent
+from backend.app.models.user import User
 
 from backend.app.routes.auth import roles_required
 
@@ -54,6 +64,13 @@ from backend.app.services.auth_service import (
 from backend.app.services.extension_agent_service import (
     ExtensionAgentAlreadyExistsError,
     ExtensionAgentService,
+)
+from backend.app.services.registration_otp_service import (
+    RegistrationOTPService,
+    RegistrationOTPError,
+    RegistrationOTPCooldownError,
+    RegistrationOTPDeliveryError,
+    RegistrationOTPValidationError,
 )
 
 
@@ -108,10 +125,7 @@ def error_response(
 # EXTENSION AGENT MANAGEMENT
 # =========================================================
 
-@admin_bp.post("/extension-agents")
-@jwt_required()
-@roles_required("admin")
-def create_extension_agent():
+def _legacy_create_extension_agent():
     """
     Create a new extension-agent account and professional
     extension-agent profile.
@@ -177,6 +191,95 @@ def create_extension_agent():
         )
 
 
+@admin_bp.post("/extension-agents")
+@jwt_required()
+@roles_required("admin")
+def create_extension_agent():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return error_response(
+            "INVALID_REQUEST",
+            "Request body must contain valid JSON.",
+            400,
+        )
+
+    try:
+        admin_id = int(get_jwt_identity())
+        user = ExtensionAgentService.create_pending_agent(
+            phone_number=payload.get("phone_number"),
+            full_name=payload.get("full_name"),
+            email=payload.get("email"),
+            employee_id=payload.get("employee_id"),
+            organization=payload.get("organization"),
+            region_id=payload.get("region_id"),
+            zone_id=payload.get("zone_id"),
+            woreda_id=payload.get("woreda_id"),
+            verification_method=payload.get("verification_method"),
+            professional_info_verified=payload.get(
+                "professional_info_verified"
+            ),
+            verified_by_admin_id=admin_id,
+            specialization=payload.get("specialization"),
+            certification_number=payload.get("certification_number"),
+            preferred_language=payload.get("preferred_language", "en"),
+        )
+    except UserAlreadyExistsError as exc:
+        return error_response("USER_ALREADY_EXISTS", str(exc), 409)
+    except ExtensionAgentAlreadyExistsError as exc:
+        return error_response("EXTENSION_AGENT_ALREADY_EXISTS", str(exc), 409)
+    except (AuthServiceError, ValueError, TypeError) as exc:
+        return error_response("VALIDATION_ERROR", str(exc), 400)
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to provision extension agent.")
+        return error_response(
+            "EXTENSION_AGENT_CREATE_ERROR",
+            "Unable to create extension agent.",
+            500,
+        )
+
+    try:
+        delivery = RegistrationOTPService.send_extension_agent_activation_code(
+            user.id
+        )
+    except RegistrationOTPCooldownError as exc:
+        return error_response(
+            "EXTENSION_AGENT_CREATED_DELIVERY_FAILED",
+            f"Agent account is pending activation, but code delivery was rate limited: {exc}",
+            503,
+        )
+    except (RegistrationOTPDeliveryError, RegistrationOTPError) as exc:
+        current_app.logger.warning(
+            "Extension-agent account %s was created, but activation delivery failed: %s",
+            user.id,
+            exc,
+        )
+        return error_response(
+            "EXTENSION_AGENT_CREATED_DELIVERY_FAILED",
+            "Agent account is pending activation, but the code could not be delivered. Use the resend action.",
+            503,
+        )
+
+    profile = ExtensionAgentService.get_agent_by_user_id(user.id)
+    agent = ExtensionAgentService.agent_to_dict(profile) if profile else None
+    if agent is None:
+        current_app.logger.error(
+            "Created extension-agent account %s has no profile.",
+            user.id,
+        )
+        return error_response(
+            "EXTENSION_AGENT_CREATE_ERROR",
+            "Unable to load the newly created extension-agent profile.",
+            500,
+        )
+    agent["activation_delivery"] = {
+        "status": "submitted",
+        "expires_in_seconds": delivery["expires_in_seconds"],
+        "resend_after_seconds": delivery["resend_after_seconds"],
+    }
+    return success_response(agent, 201)
+
+
 @admin_bp.get("/extension-agents")
 @jwt_required()
 @roles_required("admin")
@@ -190,6 +293,28 @@ def get_extension_agents():
         search = request.args.get("search", "").strip() or None
         region = request.args.get("region", "").strip() or None
         woreda = request.args.get("woreda", "").strip() or None
+        account_status = request.args.get("account_status", "").strip() or None
+        if account_status not in {
+            None,
+            "pending_activation",
+            "active",
+            "suspended",
+        }:
+            return error_response(
+                "INVALID_ACCOUNT_STATUS_FILTER",
+                "account_status must be pending_activation, active, or suspended.",
+                400,
+            )
+        verified_value = request.args.get("professional_info_verified")
+        professional_info_verified = None
+        if verified_value is not None:
+            if verified_value not in {"true", "false"}:
+                return error_response(
+                    "INVALID_VERIFICATION_FILTER",
+                    "professional_info_verified must be true or false.",
+                    400,
+                )
+            professional_info_verified = verified_value == "true"
 
         agents = (
             AdminService
@@ -197,6 +322,8 @@ def get_extension_agents():
                 search=search,
                 region=region,
                 woreda=woreda,
+                account_status=account_status,
+                professional_info_verified=professional_info_verified,
             )
         )
 
@@ -213,6 +340,194 @@ def get_extension_agents():
             "Unable to retrieve extension agents.",
             500,
         )
+
+
+@admin_bp.get("/extension-agent-geography")
+@jwt_required()
+@roles_required("admin")
+def get_extension_agent_geography():
+    level = request.args.get("level", "").strip().lower()
+    parent_id = request.args.get("parent_id", "").strip()
+    if level not in {"regions", "zones", "woredas"}:
+        return error_response(
+            "INVALID_GEOGRAPHY_LEVEL",
+            "level must be regions, zones, or woredas.",
+            400,
+        )
+    if level == "regions":
+        rows = GeographyRegion.query.order_by(GeographyRegion.name_en).all()
+        data = [
+            {"id": row.id, "name_en": row.name_en, "name_local": row.name_local}
+            for row in rows
+        ]
+    elif level == "zones":
+        if not parent_id:
+            return error_response(
+                "MISSING_GEOGRAPHY_PARENT",
+                "parent_id is required for zones.",
+                400,
+            )
+        rows = (
+            GeographyZone.query
+            .filter_by(region_id=parent_id)
+            .order_by(GeographyZone.name_en)
+            .all()
+        )
+        data = [
+            {
+                "id": row.id,
+                "name_en": row.name_en,
+                "name_local": row.name_local,
+                "parent_id": row.region_id,
+            }
+            for row in rows
+        ]
+    else:
+        if not parent_id:
+            return error_response(
+                "MISSING_GEOGRAPHY_PARENT",
+                "parent_id is required for woredas.",
+                400,
+            )
+        rows = (
+            GeographyWoreda.query
+            .filter_by(zone_id=parent_id)
+            .order_by(GeographyWoreda.name_en)
+            .all()
+        )
+        data = [
+            {
+                "id": row.id,
+                "name_en": row.name_en,
+                "name_local": row.name_local,
+                "parent_id": row.zone_id,
+            }
+            for row in rows
+        ]
+    return success_response(data)
+
+
+@admin_bp.post("/extension-agents/<int:user_id>/activation-code")
+@jwt_required()
+@roles_required("admin")
+def resend_extension_agent_activation(user_id: int):
+    profile = ExtensionAgentService.get_agent_by_user_id(user_id)
+    if profile is None:
+        return error_response("EXTENSION_AGENT_NOT_FOUND", "Extension agent not found.", 404)
+    try:
+        result = RegistrationOTPService.send_extension_agent_activation_code(
+            user_id
+        )
+        return success_response(
+            {
+                "message": "Activation code submitted for delivery.",
+                "expires_in_seconds": result["expires_in_seconds"],
+                "resend_after_seconds": result["resend_after_seconds"],
+            }
+        )
+    except RegistrationOTPCooldownError as exc:
+        return error_response("EXTENSION_AGENT_ACTIVATION_COOLDOWN", str(exc), 429)
+    except RegistrationOTPValidationError as exc:
+        return error_response("EXTENSION_AGENT_ACTIVATION_INVALID", str(exc), 400)
+    except RegistrationOTPDeliveryError:
+        current_app.logger.warning(
+            "Could not resend activation code for extension agent %s.",
+            user_id,
+        )
+        return error_response(
+            "EXTENSION_AGENT_ACTIVATION_DELIVERY_FAILED",
+            "Unable to deliver the activation code.",
+            503,
+        )
+    except RegistrationOTPError:
+        current_app.logger.warning(
+            "Could not prepare activation code for extension agent %s.",
+            user_id,
+        )
+        return error_response(
+            "EXTENSION_AGENT_ACTIVATION_ERROR",
+            "Unable to prepare the activation code.",
+            500,
+        )
+
+
+@admin_bp.patch("/extension-agents/<int:user_id>/status")
+@jwt_required()
+@roles_required("admin")
+def update_extension_agent_status(user_id: int):
+    payload = request.get_json(silent=True)
+    status = payload.get("account_status") if isinstance(payload, dict) else None
+    try:
+        result = AdminService.set_extension_agent_status(
+            user_id,
+            account_status=status,
+        )
+        return success_response(result)
+    except ValueError as exc:
+        return error_response("INVALID_ACCOUNT_STATUS", str(exc), 400)
+    except Exception as exc:
+        if "not found" in str(exc).lower():
+            return error_response("EXTENSION_AGENT_NOT_FOUND", str(exc), 404)
+        if "status" in str(exc).lower() or "reactivated" in str(exc).lower():
+            return error_response("INVALID_ACCOUNT_STATUS", str(exc), 400)
+        current_app.logger.exception(
+            "Failed to update extension-agent status for %s.",
+            user_id,
+        )
+        return error_response(
+            "EXTENSION_AGENT_STATUS_UPDATE_ERROR",
+            "Unable to update extension-agent status.",
+            500,
+        )
+
+
+@admin_bp.patch("/extension-agents/<int:user_id>/assignment")
+@jwt_required()
+@roles_required("admin")
+def transfer_extension_agent(user_id: int):
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return error_response(
+            "INVALID_REQUEST",
+            "Request body must contain valid JSON.",
+            400,
+        )
+    try:
+        admin_id = int(get_jwt_identity())
+        result = AdminService.transfer_extension_agent(
+            user_id=user_id,
+            region_id=payload.get("region_id"),
+            zone_id=payload.get("zone_id"),
+            woreda_id=payload.get("woreda_id"),
+            admin_id=admin_id,
+        )
+        return success_response(result)
+    except ValueError as exc:
+        return error_response("INVALID_ASSIGNMENT", str(exc), 400)
+    except Exception as exc:
+        if "not found" in str(exc).lower():
+            return error_response("EXTENSION_AGENT_NOT_FOUND", str(exc), 404)
+        current_app.logger.exception(
+            "Failed to transfer extension agent %s.",
+            user_id,
+        )
+        return error_response(
+            "EXTENSION_AGENT_TRANSFER_ERROR",
+            "Unable to transfer extension agent.",
+            500,
+        )
+
+
+@admin_bp.get("/extension-agents/<int:user_id>/assignment-history")
+@jwt_required()
+@roles_required("admin")
+def get_extension_agent_assignment_history(user_id: int):
+    profile = ExtensionAgentService.get_agent_by_user_id(user_id)
+    if profile is None:
+        return error_response("EXTENSION_AGENT_NOT_FOUND", "Extension agent not found.", 404)
+    return success_response(
+        AdminService.get_extension_agent_assignment_history(user_id)
+    )
 
 
 # =========================================================
@@ -309,15 +624,17 @@ def update_user_status(
 
     try:
 
-        # AdminService already returns the
-        # serialized user dictionary.
-        user = (
-            AdminService
-            .set_user_status(
+        account = AdminService.get_user_by_id(user_id)
+        if account.role == "extension_agent":
+            user = AdminService.set_extension_agent_status(
+                user_id,
+                account_status="active" if is_active else "suspended",
+            )
+        else:
+            user = AdminService.set_user_status(
                 user_id=user_id,
                 is_active=is_active,
             )
-        )
 
         return success_response(user)
 
