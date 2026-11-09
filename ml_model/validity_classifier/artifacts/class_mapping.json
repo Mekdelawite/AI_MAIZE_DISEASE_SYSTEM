@@ -1,0 +1,12 @@
+{
+  "class_indices": {
+    "invalid_image": 0,
+    "valid_maize_leaf": 1
+  },
+  "input_size": [
+    160,
+    160
+  ],
+  "valid_probability_threshold": 0.5,
+  "preprocessing": "tensorflow.keras.applications.mobilenet_v2.preprocess_input"
+}
