@@ -1,3 +1,4 @@
+
 """
 =========================================================
 AI Diagnosis Service
@@ -9,20 +10,8 @@ Application-level service that combines:
     2. Top disease predictions
     3. Optional Grad-CAM explainability
 
-Architecture:
-
-    Flask API
-        |
-        v
-    DiagnosisService
-        |
-        +--------------------------+
-        |                          |
-        v                          v
-    DiseasePredictor       ExplainabilityService
-        |                          |
-        v                          v
-    MobileNetV2                  Grad-CAM
+Grad-CAM is initialized lazily, only when requested.
+This avoids loading a second model during normal diagnosis.
 
 Author : Nigusu Tigabu, Rediet Tsega, Sanueal Admasu
 Project: AI Maize Disease Detection System
@@ -31,14 +20,15 @@ Project: AI Maize Disease Detection System
 
 from pathlib import Path
 from typing import Any, Dict
+from threading import Lock
 
 
 class DiagnosisService:
     """
     Main application service for maize disease diagnosis.
 
-    This service connects the existing prediction and
-    explainability components without duplicating their logic.
+    Connects the existing prediction and explainability
+    components without duplicating their logic.
     """
 
     def __init__(
@@ -49,15 +39,10 @@ class DiagnosisService:
         """
         Initialize the diagnosis service.
 
-        Parameters
-        ----------
-        predictor:
-            Optional DiseasePredictor instance.
+        The predictor is initialized immediately because it
+        is required for normal diagnosis.
 
-        explainability_service:
-            Optional ExplainabilityService instance.
-
-        Supplying instances is useful for testing.
+        Grad-CAM is initialized only when explicitly requested.
         """
 
         self._predictor = (
@@ -66,79 +51,58 @@ class DiagnosisService:
             else self._create_predictor()
         )
 
-        self._explainability_service = (
-            explainability_service
-            if explainability_service is not None
-            else self._create_explainability_service()
-        )
+        # Lazy initialization: do not load Grad-CAM here.
+        self._explainability_service = explainability_service
+
+        # Prevent multiple simultaneous Grad-CAM initializations.
+        self._explainability_lock = Lock()
 
     # =====================================================
     # PATH CONFIGURATION
     # =====================================================
 
+    
     @staticmethod
     def _configure_python_paths():
         """
         Configure Python paths required by the AI modules.
-
-        Project structure:
-
-            AI_MAIZE_DISEASE_SYSTEM/
-                ml_model/
-                    inference/
-                    explainability/
-                    ai_service/
-
-        The inference modules use local imports such as:
-
-            from config import ...
-            from preprocess import ...
-            from utils import ...
-
-        Therefore both ml_model and ml_model/inference
-        must be available in sys.path.
         """
 
         import sys
 
-        ml_model_dir = (
+        # Project root:
+        # AI_MAIZE_DISEASE_SYSTEM/
+        project_root = (
             Path(__file__)
             .resolve()
-            .parents[1]
+            .parents[2]
         )
 
-        inference_dir = (
-            ml_model_dir
-            / "inference"
-        )
+        # AI_MAIZE_DISEASE_SYSTEM/ml_model/
+        ml_model_dir = project_root / "ml_model"
 
-        explainability_dir = (
-            ml_model_dir
-            / "explainability"
-        )
+        inference_dir = ml_model_dir / "inference"
+        explainability_dir = ml_model_dir / "explainability"
 
         required_paths = [
+            project_root,
             ml_model_dir,
             inference_dir,
             explainability_dir,
         ]
 
-        for path in required_paths:
-
+        for path in reversed(required_paths):
             path_string = str(path)
 
             if path_string not in sys.path:
-
-                sys.path.insert(
-                    0,
-                    path_string,
-                )
+                sys.path.insert(0, path_string)
 
         return (
             ml_model_dir,
             inference_dir,
             explainability_dir,
         )
+
 
     # =====================================================
     # COMPONENT INITIALIZATION
@@ -148,23 +112,16 @@ class DiagnosisService:
     def _create_predictor(cls):
         """
         Create the existing DiseasePredictor.
-
-        The predictor is loaded only once by its own
-        singleton implementation.
         """
 
         try:
-
             cls._configure_python_paths()
 
-            from inference.predictor import (
-                DiseasePredictor,
-            )
+            from inference.predictor import DiseasePredictor
 
             return DiseasePredictor()
 
         except Exception as error:
-
             raise RuntimeError(
                 f"Unable to initialize DiseasePredictor: {error}"
             ) from error
@@ -173,65 +130,63 @@ class DiagnosisService:
     def _create_explainability_service(cls):
         """
         Create the existing ExplainabilityService.
+        Called only when Grad-CAM is requested.
         """
 
         try:
-
             cls._configure_python_paths()
 
-            from explainability_service import (
+            from explainability.explainability_service import (
                 ExplainabilityService,
             )
 
             return ExplainabilityService()
 
-        except Exception:
+        except Exception as error:
+            raise RuntimeError(
+                "Unable to initialize ExplainabilityService."
+            ) from error
 
-            try:
+    def _get_explainability_service(self):
+        """
+        Initialize Grad-CAM on demand.
 
-                cls._configure_python_paths()
+        The lock prevents concurrent requests from
+        initializing multiple Grad-CAM instances.
+        """
 
-                from explainability.explainability_service import (
-                    ExplainabilityService,
-                )
+        if self._explainability_service is None:
 
-                return ExplainabilityService()
+            with self._explainability_lock:
 
-            except Exception as error:
+                if self._explainability_service is None:
+                    self._explainability_service = (
+                        self._create_explainability_service()
+                    )
 
-                raise RuntimeError(
-                    "Unable to initialize "
-                    "ExplainabilityService."
-                ) from error
+        return self._explainability_service
 
     # =====================================================
     # IMAGE VALIDATION
     # =====================================================
 
     @staticmethod
-    def _validate_image_path(
-        image_path: str,
-    ) -> Path:
+    def _validate_image_path(image_path: str) -> Path:
         """
         Validate the image path before diagnosis.
         """
 
         if not image_path:
-
-            raise ValueError(
-                "Image path cannot be empty."
-            )
+            raise ValueError("Image path cannot be empty.")
 
         path = Path(image_path)
 
         if not path.exists():
-
             raise FileNotFoundError(
                 f"Image not found: {path}"
             )
 
         if not path.is_file():
-
             raise ValueError(
                 f"Image path is not a file: {path}"
             )
@@ -250,103 +205,70 @@ class DiagnosisService:
         """
         Diagnose a maize leaf image.
 
-        Parameters
-        ----------
-        image_path:
-            Path to the maize leaf image.
+        explain=False:
+            Fast disease prediction only.
 
-        explain:
-            False:
-                Fast disease prediction only.
-
-            True:
-                Disease prediction followed by
-                Grad-CAM explanation.
-
-        Returns
-        -------
-        dict
-            Diagnosis result.
+        explain=True:
+            Disease prediction followed by Grad-CAM.
         """
 
-        path = self._validate_image_path(
-            image_path
-        )
+        path = self._validate_image_path(image_path)
 
         try:
 
             # -------------------------------------------------
-            # STEP 1 — FAST PREDICTION
+            # STEP 1 — FAST DISEASE PREDICTION
             # -------------------------------------------------
 
-            result = self._predictor.predict(
-                str(path)
-            )
+            result = self._predictor.predict(str(path))
 
             if not isinstance(result, dict):
-
                 raise ValueError(
-                    "DiseasePredictor returned "
-                    "an invalid result."
+                    "DiseasePredictor returned an invalid result."
                 )
 
             if "prediction" not in result:
-
                 raise ValueError(
-                    "Prediction result is missing "
-                    "'prediction'."
+                    "Prediction result is missing 'prediction'."
                 )
 
             if "top_predictions" not in result:
-
                 raise ValueError(
-                    "Prediction result is missing "
-                    "'top_predictions'."
+                    "Prediction result is missing 'top_predictions'."
                 )
 
             # -------------------------------------------------
-            # STEP 2 — OPTIONAL GRAD-CAM
+            # STEP 2 — OPTIONAL GRAD-CAM EXPLANATION
             # -------------------------------------------------
 
             if explain:
 
-                explanation = (
-                    self._explainability_service.explain(
-                        str(path)
-                    )
+                explanation_service = (
+                    self._get_explainability_service()
                 )
 
-                self._validate_explanation(
-                    explanation
+                explanation = explanation_service.explain(
+                    str(path)
                 )
 
-                # -------------------------------------------------
-                # Make sure prediction and explanation refer
-                # to the same predicted class.
-                # -------------------------------------------------
+                self._validate_explanation(explanation)
 
+                # Verify both components identify the same class.
                 prediction_class_id = (
-                    result["prediction"]
-                    .get("class_id")
+                    result["prediction"].get("class_id")
                 )
 
                 explanation_class_id = (
                     explanation.get("class_id")
                 )
 
-                if (
-                    prediction_class_id
-                    != explanation_class_id
-                ):
-
+                if prediction_class_id != explanation_class_id:
                     raise ValueError(
-                        "Prediction class does not "
-                        "match explanation class."
+                        "Prediction class does not match "
+                        "explanation class."
                     )
 
-                result["explainability"] = (
-                    explanation
-                )
+                result["explainability"] = explanation
 
             return result
 
@@ -372,29 +294,31 @@ class DiagnosisService:
         """
         Generate a Grad-CAM explanation directly.
 
-        This does not perform the normal predictor
-        operation first.
+        This operation initializes Grad-CAM on demand.
         """
 
-        path = self._validate_image_path(
-            image_path
-        )
+        path = self._validate_image_path(image_path)
 
         try:
 
-            result = (
-                self._explainability_service.explain(
-                    str(path)
-                )
+            explanation_service = (
+                self._get_explainability_service()
             )
 
-            self._validate_explanation(
-                result
+            result = explanation_service.explain(
+                str(path)
             )
+
+            self._validate_explanation(result)
 
             return result
 
         except Exception as error:
+
+            print(
+                "[AI DIAGNOSIS] Explanation failed:",
+                repr(error),
+            )
 
             raise RuntimeError(
                 "Disease explanation failed."
@@ -406,47 +330,23 @@ class DiagnosisService:
 
     def is_ready(self) -> bool:
         """
-        Check whether both diagnosis components
-        are available.
+        Check readiness of the normal disease predictor.
+
+        Grad-CAM is optional and must not prevent normal
+        disease diagnosis from being available.
         """
 
         try:
 
-            predictor_ready = (
-                self._predictor is not None
-            )
-
-            explanation_ready = (
-                self._explainability_service
-                is not None
-            )
-
-            if not predictor_ready:
-
+            if self._predictor is None:
                 return False
 
-            if not explanation_ready:
-
-                return False
-
-            # -------------------------------------------------
-            # Ask explainability service if it supports
-            # is_ready().
-            # -------------------------------------------------
-
-            if hasattr(
-                self._explainability_service,
-                "is_ready",
-            ):
-
-                return bool(
-                    self._explainability_service.is_ready()
-                )
+            if hasattr(self._predictor, "is_ready"):
+                return bool(self._predictor.is_ready())
 
             return True
 
         except Exception:
-
             return False
 
     # =====================================================
@@ -461,14 +361,9 @@ class DiagnosisService:
         Validate a Grad-CAM explanation result.
         """
 
-        if not isinstance(
-            explanation,
-            dict,
-        ):
-
+        if not isinstance(explanation, dict):
             raise ValueError(
-                "Explainability result must "
-                "be a dictionary."
+                "Explainability result must be a dictionary."
             )
 
         required_fields = [
@@ -489,96 +384,74 @@ class DiagnosisService:
         ]
 
         if missing_fields:
-
             raise ValueError(
                 "Explainability result is missing "
                 f"required fields: {missing_fields}"
             )
 
-        # -----------------------------------------------------
-        # Method
-        # -----------------------------------------------------
+        # -------------------------------------------------
+        # METHOD
+        # -------------------------------------------------
 
         if explanation["method"] != "Grad-CAM":
-
             raise ValueError(
                 "Unsupported explainability method: "
                 f"{explanation['method']}"
             )
 
-        # -----------------------------------------------------
-        # Target layer
-        # -----------------------------------------------------
+        # -------------------------------------------------
+        # TARGET LAYER
+        # -------------------------------------------------
 
         if not explanation["target_layer"]:
-
             raise ValueError(
                 "Explainability target layer is empty."
             )
 
-        # -----------------------------------------------------
-        # Heatmap
-        # -----------------------------------------------------
+        # -------------------------------------------------
+        # HEATMAP
+        # -------------------------------------------------
 
-        heatmap = Path(
-            str(
-                explanation["heatmap"]
-            )
-        )
+        heatmap = Path(str(explanation["heatmap"]))
 
         if not heatmap.exists():
-
             raise FileNotFoundError(
                 f"Heatmap file not found: {heatmap}"
             )
 
         if not heatmap.is_file():
-
             raise ValueError(
                 f"Heatmap path is not a file: {heatmap}"
             )
 
-        # -----------------------------------------------------
-        # Overlay
-        # -----------------------------------------------------
+        # -------------------------------------------------
+        # OVERLAY
+        # -------------------------------------------------
 
-        overlay = Path(
-            str(
-                explanation["overlay"]
-            )
-        )
+        overlay = Path(str(explanation["overlay"]))
 
         if not overlay.exists():
-
             raise FileNotFoundError(
                 f"Overlay file not found: {overlay}"
             )
 
         if not overlay.is_file():
-
             raise ValueError(
                 f"Overlay path is not a file: {overlay}"
             )
 
-        # -----------------------------------------------------
-        # Heatmap shape
-        # -----------------------------------------------------
+        # -------------------------------------------------
+        # HEATMAP SHAPE
+        # -------------------------------------------------
 
-        shape = explanation[
-            "heatmap_shape"
-        ]
+        shape = explanation["heatmap_shape"]
 
-        if not isinstance(
-            shape,
-            (list, tuple),
-        ):
-
+        if not isinstance(shape, (list, tuple)):
             raise ValueError(
                 "Heatmap shape must be a list or tuple."
             )
 
         if len(shape) != 2:
-
             raise ValueError(
                 "Grad-CAM heatmap must be 2-dimensional."
             )
@@ -599,9 +472,12 @@ class DiagnosisService:
     def explainability_service(self):
         """
         Access the underlying ExplainabilityService.
+
+        Accessing this property initializes Grad-CAM
+        if it has not already been initialized.
         """
 
-        return self._explainability_service
+        return self._get_explainability_service()
 
 
 # =========================================================
@@ -626,11 +502,13 @@ if __name__ == "__main__":
             f"Service ready: {service.is_ready()}"
         )
 
+        print(
+            "Grad-CAM initialized:",
+            service._explainability_service is not None,
+        )
+
     except Exception as error:
 
         print()
-        print(
-            "Service initialization failed:"
-        )
-
+        print("Service initialization failed:")
         print(error)
