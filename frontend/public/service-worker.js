@@ -177,18 +177,38 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (request.mode === 'navigate') {
-    event.respondWith((async () => {
-      try {
-        const response = await fetch(request);
-        if (response.ok) await cacheShellResponse(response.clone());
+  event.respondWith((async () => {
+    try {
+      const response = await fetch(request);
+
+      if (response.ok) {
+        await cacheShellResponse(response.clone());
         return response;
-      } catch {
-        const cache = await caches.open(SHELL_CACHE);
-        return (await cache.match(scopeRoot.href)) || (await cache.match(indexUrl.href)) || Response.error();
       }
-    })());
-    return;
-  }
+
+      // Vercel may return 404 for a React route.
+      if (response.status === 404) {
+        const cache = await caches.open(SHELL_CACHE);
+        return (
+          (await cache.match(scopeRoot.href)) ||
+          (await cache.match(indexUrl.href)) ||
+          response
+        );
+      }
+
+      return response;
+    } catch {
+      // Use the cached app shell when offline.
+      const cache = await caches.open(SHELL_CACHE);
+      return (
+        (await cache.match(scopeRoot.href)) ||
+        (await cache.match(indexUrl.href)) ||
+        Response.error()
+      );
+    }
+  })());
+  return;
+}
 
   const isAppAsset = ['script', 'style', 'image', 'font', 'worker'].includes(request.destination) || url.pathname.includes('/assets/');
   if (!isAppAsset) return;

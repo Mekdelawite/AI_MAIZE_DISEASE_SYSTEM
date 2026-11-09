@@ -70,10 +70,13 @@ class OfflineSyncService:
 
     def __init__(self) -> None:
         """Initialize the offline synchronization service."""
+        self._diagnosis_advisory_service: DiagnosisAdvisoryIntegrationService | None = None
 
-        self._diagnosis_advisory_service = (
-            DiagnosisAdvisoryIntegrationService()
-        )
+    def _get_diagnosis_advisory_service(self) -> DiagnosisAdvisoryIntegrationService:
+        """Create the diagnosis service only when diagnosis processing is needed."""
+        if self._diagnosis_advisory_service is None:
+            self._diagnosis_advisory_service = DiagnosisAdvisoryIntegrationService()
+        return self._diagnosis_advisory_service
 
     # =====================================================
     # Validation helpers
@@ -570,7 +573,7 @@ class OfflineSyncService:
             )
 
             result = (
-                self._diagnosis_advisory_service
+                self._get_diagnosis_advisory_service()
                 .diagnose_and_advise(
                     image_path=history_image_path,
                     language=normalized_language,
@@ -814,7 +817,7 @@ class OfflineSyncService:
                 )
 
                 result = (
-                    self._diagnosis_advisory_service
+                    self._get_diagnosis_advisory_service()
                     .diagnose_and_advise(
                         image_path=history_image_path,
                         language="en",

@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-
+from types import SimpleNamespace
 import pytest
 from backend.app.models import DiagnosisRecord, OfflineSyncRecord, User
 from backend.app.services.offline_sync_service import OfflineSyncError, OfflineSyncService
@@ -47,7 +47,11 @@ def test_completed_operation_returns_existing_result_without_processing(database
     def unexpected_processing(**kwargs):
         pytest.fail("Completed operations must not run diagnosis again.")
 
-    monkeypatch.setattr(service._diagnosis_advisory_service, "diagnose_and_advise", unexpected_processing)
+    monkeypatch.setattr(
+    service,
+    "_get_diagnosis_advisory_service",
+    lambda: pytest.fail("Completed operations must not initialize diagnosis."),
+     )
     result = service.synchronize_diagnosis(record.operation_id, "diagnosis", user.id, image_path)
     assert result["operation_id"] == "completed-op-001"
     assert result["status"] == "completed"
@@ -141,7 +145,15 @@ def test_recovery_processes_existing_image_successfully(database, tmp_path, monk
         assert kwargs["user_id"] == user.id
         return {"database": {"diagnosis_id": None}, "status": "completed"}
 
-    monkeypatch.setattr(service._diagnosis_advisory_service, "diagnose_and_advise", fake_diagnose_and_advise)
+    monkeypatch.setattr(
+        service,
+        "_get_diagnosis_advisory_service",
+        lambda: type(
+            "FakeDiagnosisAdvisoryService",
+            (),
+            {"diagnose_and_advise": staticmethod(fake_diagnose_and_advise)},
+        )(),
+    )
     results = service.recover_processing_operations(user_id=user.id)
     database.session.refresh(record)
     assert record.status == "completed"
