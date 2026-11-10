@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from sqlalchemy.engine import make_url
@@ -75,9 +76,9 @@ class Config:
     ACTIVATION_FRONTEND_URL = (
         os.getenv(
             "ACTIVATION_FRONTEND_URL",
-            "http://localhost:5173",
+            os.getenv("FRONTEND_BASE_URL", "http://localhost:4173"),
         ).strip().rstrip("/")
-        or "http://localhost:5173"
+        or os.getenv("FRONTEND_BASE_URL", "http://localhost:4173").rstrip("/")
     )
     JWT_SECRET_KEY = os.getenv(
         "JWT_SECRET_KEY",
@@ -188,6 +189,7 @@ class Config:
         "AFRICASTALKING_ENVIRONMENT",
         "sandbox",
     )
+    FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:4173").rstrip("/")
     SMART_NOTIFICATIONS_ENABLED = os.getenv("SMART_NOTIFICATIONS_ENABLED", "true").lower() in {"1", "true", "yes"}
     # Urgent outbreak alerts may bypass quiet hours, but never category or SMS consent.
     CRITICAL_ALERTS_BYPASS_QUIET_HOURS = os.getenv("CRITICAL_ALERTS_BYPASS_QUIET_HOURS", "true").lower() in {"1", "true", "yes"}
@@ -310,6 +312,19 @@ class ProductionConfig(Config):
     """
 
     DEBUG = False
+
+    @staticmethod
+    def validate_activation_frontend_url(url: str) -> None:
+        parsed = urlparse(url)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
+        ):
+            raise RuntimeError(
+                "Production requires ACTIVATION_FRONTEND_URL or FRONTEND_BASE_URL "
+                "to be the deployed HTTPS frontend URL."
+            )
 
 
 # =========================================================

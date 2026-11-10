@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Bell, BellOff, CheckCircle2, Edit3, Loader2, MapPin, RefreshCw, WifiOff } from 'lucide-react';
+import { Bell, BellOff, CheckCircle2, Edit3, Loader2, MapPin, RefreshCw, Trash2, WifiOff } from 'lucide-react';
 import { ErrorState, LoadingSkeleton } from '../components/common/FeedbackStates';
 import { AppShell } from '../components/layout/AppShell';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { notificationService } from '../services/notificationService';
 import { profileService } from '../services/profileService';
+import { offlineDiagnosisStore } from '../services/offlineDiagnosisStore';
 import { FarmerNotificationPreferences, ProfileResponseData } from '../types/api';
 
 const PROFILE_CACHE_PREFIX = 'maizecare_profile_v1_';
@@ -79,7 +80,7 @@ function readCachedProfile(userId: string | number | undefined): ProfileResponse
 
 export const ProfilePage: React.FC = () => {
   const { t, setLanguage, notify, isOnline } = useApp();
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, logout } = useAuth();
 
   const [data, setData] = useState<ProfileResponseData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -88,6 +89,9 @@ export const ProfilePage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [profileNotice, setProfileNotice] = useState<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   // Form fields
   const [fullName, setFullName] = useState('');
@@ -478,6 +482,36 @@ export const ProfilePage: React.FC = () => {
               : gpsStatus === 'error'
                 ? 'profileGpsError'
                 : null;
+  const handleDeleteAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isOnline || !user?.id) {
+      notify(t('profileDeleteAccountOnlineRequired'), 'warning');
+      return;
+    }
+    if (!deletePassword) {
+      notify('Enter your password to confirm account deletion.', 'warning');
+      return;
+    }
+
+    setDeletingAccount(true);
+    try {
+      await profileService.deleteAccount(deletePassword);
+      try {
+        await offlineDiagnosisStore.deleteForUser(user.id);
+      } catch (cleanupError) {
+        console.warn('Could not clear all local offline diagnoses after account deletion:', cleanupError);
+      }
+      localStorage.removeItem(`maizecare_profile_v1_${user.id}`);
+      localStorage.removeItem('maize_offline_user');
+      notify(t('profileDeleteAccountSuccess'), 'success');
+      setDeleteDialogOpen(false);
+      logout();
+    } catch (err: any) {
+      notify(err?.message || 'Unable to delete your account.', 'error');
+    } finally {
+      setDeletingAccount(false);
+    }
+  };
 
   return (
     <AppShell
@@ -828,6 +862,34 @@ export const ProfilePage: React.FC = () => {
                 </button>
               </div>
             )}
+          </form>
+          {user?.role === 'farmer' && (
+            <section className="rounded-xl border border-red-200 dark:border-red-900/70 bg-red-50/60 dark:bg-red-950/20 p-5 sm:p-6" aria-labelledby="delete-account-title">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 id="delete-account-title" className="text-sm font-semibold text-red-900 dark:text-red-200">{t('profileDeleteAccountTitle')}</h2>
+                  <p className="mt-1 max-w-xl text-xs leading-relaxed text-red-800 dark:text-red-300">{t('profileDeleteAccountDescription')}</p>
+                  {!isOnline && <p className="mt-2 text-xs font-medium text-red-700 dark:text-red-300">{t('profileDeleteAccountOnlineRequired')}</p>}
+                </div>
+                <button type="button" disabled={!isOnline} onClick={() => setDeleteDialogOpen(true)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-red-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50">
+                  <Trash2 className="h-4 w-4" /> {t('profileDeleteAccountAction')}
+                </button>
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+      {deleteDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs" role="dialog" aria-modal="true" aria-labelledby="confirm-delete-account-title">
+          <form onSubmit={handleDeleteAccount} className="w-full max-w-md rounded-xl border border-stone-200 bg-white p-6 shadow-xl dark:border-stone-800 dark:bg-[#121A16]">
+            <h2 id="confirm-delete-account-title" className="text-base font-bold text-stone-900 dark:text-stone-100">{t('profileDeleteAccountConfirmTitle')}</h2>
+            <p className="mt-2 text-sm leading-relaxed text-stone-600 dark:text-stone-400">{t('profileDeleteAccountConfirmDescription')}</p>
+            <label htmlFor="delete-account-password" className="mt-5 block text-xs font-medium text-stone-700 dark:text-stone-300">{t('profileDeleteAccountPassword')}</label>
+            <input id="delete-account-password" type="password" autoComplete="current-password" required value={deletePassword} onChange={(event) => setDeletePassword(event.target.value)} className="mt-1.5 w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-sm dark:border-stone-700 dark:bg-stone-900" />
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" disabled={deletingAccount} onClick={() => { setDeleteDialogOpen(false); setDeletePassword(''); }} className="rounded-lg bg-stone-100 px-4 py-2 text-xs font-medium text-stone-700 disabled:opacity-50 dark:bg-stone-800 dark:text-stone-300">Cancel</button>
+              <button type="submit" disabled={deletingAccount || !deletePassword} className="rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-50">{deletingAccount ? t('profileDeleteAccountSubmitting') : t('profileDeleteAccountConfirm')}</button>
+            </div>
           </form>
         </div>
       )}

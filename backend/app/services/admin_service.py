@@ -354,12 +354,23 @@ class AdminService:
             agents = agents.filter(ExtensionAgent.woreda.ilike(f"%{woreda}%"))
 
         if account_status:
-            agents = agents.filter(ExtensionAgent.account_status == account_status)
+            agents = agents.filter(
+                ExtensionAgent.account_status == account_status
+            )
+
         if professional_info_verified is not None:
             agents = agents.filter(
                 ExtensionAgent.professional_info_verified
                 == professional_info_verified
             )
+
+        agents = agents.order_by(User.created_at.desc()).all()
+        result = []
+        for agent in agents:
+            row = ExtensionAgentService.agent_to_dict(agent)
+            row["id"] = agent.user_id
+            result.append(row)
+        return result
 
         agents = agents.order_by(User.created_at.desc()).all()
         result = []

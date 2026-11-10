@@ -41,4 +41,11 @@ export const profileService = {
       farmer_profile: res?.farmer_profile ?? null,
     };
   },
+
+  async deleteAccount(password: string): Promise<void> {
+    await apiRequest('/api/profile/account', {
+      method: 'DELETE',
+      body: { password },
+    });
+  },
 };

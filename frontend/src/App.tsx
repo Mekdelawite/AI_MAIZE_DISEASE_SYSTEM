@@ -45,6 +45,7 @@ const RegisterPage = lazy(() => import('./pages/RegisterPage').then((page) => ({
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((page) => ({ default: page.ReportsPage })));
 const RegionalAlertPage = lazy(() => import('./pages/RegionalAlertPage').then((page) => ({ default: page.RegionalAlertPage })));
 const UserManagementPage = lazy(() => import('./pages/UserManagementPage').then((page) => ({ default: page.UserManagementPage })));
+const VerifyExtensionAgentEmailPage = lazy(() => import('./pages/VerifyExtensionAgentEmailPage').then((page) => ({ default: page.VerifyExtensionAgentEmailPage })));
 const WeatherPage = lazy(() => import('./pages/WeatherPage').then((page) => ({ default: page.WeatherPage })));
 function OfflineSyncRunner() {
   const location = useLocation();
@@ -74,7 +75,10 @@ function OfflineSyncRunner() {
     syncingRef.current = true;
 
     try {
-      await syncPendingDiagnoses(userId, user?.preferred_language ?? 'en');
+      await syncPendingDiagnoses(
+        userId,
+        user?.preferred_language === 'am' ? 'am' : 'en',
+      );
     } catch (error) {
       console.error('Offline diagnosis sync could not complete:', error);
     } finally {
@@ -245,7 +249,7 @@ export default function App() {
             />
             <Route path="/recover-password" element={<PasswordRecoveryPage />} />
             <Route path="/activate-extension-agent" element={<ExtensionAgentActivationPage />} />
-
+            <Route path="/verify-extension-agent" element={<VerifyExtensionAgentEmailPage />} />
             {/* Farmer Workspace Routes */}
             <Route
               path="/farmer/dashboard"

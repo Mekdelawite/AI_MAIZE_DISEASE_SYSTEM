@@ -30,12 +30,21 @@ from __future__ import annotations
 
 from datetime import date
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from backend.app.extensions import db
 from backend.app.models.farmer_profile import FarmerProfile
 from backend.app.models.user import User
+from backend.app.models.diagnosis_record import DiagnosisRecord
+from backend.app.models.advisory_record import AdvisoryRecord
+from backend.app.models.discussion_post import DiscussionPost
+from backend.app.models.discussion_reply import DiscussionReply
+from backend.app.models.discussion_post_like import DiscussionPostLike
+from backend.app.models.farmer_notification import FarmerNotification
+from backend.app.models.offline_sync_record import OfflineSyncRecord
+from backend.app.models.password_reset_otp import PasswordResetOTP
+from backend.app.models.extension_comment import ExtensionComment
 
 NOTIFICATION_CATEGORIES = ("crop_activity", "weather_alert", "soil_water_alert", "agricultural_advisory", "important_alerts")
 DEFAULT_NOTIFICATION_PREFERENCES = {
@@ -260,6 +269,47 @@ def get_profile():
             },
         }
     ), 200
+
+
+@profile_bp.delete("/profile/account")
+@jwt_required()
+def delete_farmer_account():
+    """Permanently delete the authenticated farmer's account after password confirmation."""
+    user, response, status_code = _get_authenticated_user()
+    if response is not None:
+        return response, status_code
+    if user.role != "farmer":
+        return jsonify({"success": False, "error": {"code": "FORBIDDEN", "message": "Only farmers can delete an account from this page."}}), 403
+
+    payload = request.get_json(silent=True) or {}
+    password = payload.get("password")
+    if not isinstance(password, str) or not password:
+        return jsonify({"success": False, "error": {"code": "PASSWORD_REQUIRED", "message": "Enter your password to confirm account deletion."}}), 400
+    if not user.check_password(password):
+        return jsonify({"success": False, "error": {"code": "INVALID_PASSWORD", "message": "The password is incorrect."}}), 401
+
+    user_id = user.id
+    try:
+        # Remove dependent rows explicitly to avoid nullable-FK updates by ORM relationships.
+        diagnosis_ids = db.session.query(DiagnosisRecord.id).filter_by(user_id=user_id).subquery()
+        ExtensionComment.query.filter(ExtensionComment.diagnosis_id.in_(diagnosis_ids)).delete(synchronize_session=False)
+        AdvisoryRecord.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        DiagnosisRecord.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        FarmerProfile.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        FarmerNotification.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        OfflineSyncRecord.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        PasswordResetOTP.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        DiscussionReply.query.filter_by(farmer_id=user_id).delete(synchronize_session=False)
+        DiscussionPost.query.filter_by(author_id=user_id).delete(synchronize_session=False)
+        DiscussionPostLike.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        db.session.delete(user)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to delete farmer account %s.", user_id)
+        return jsonify({"success": False, "error": {"code": "ACCOUNT_DELETE_FAILED", "message": "Unable to delete account. Please try again."}}), 500
+
+    return jsonify({"success": True, "data": {"deleted": True}}), 200
 
 
 # =========================================================

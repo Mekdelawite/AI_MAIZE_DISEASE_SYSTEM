@@ -14,7 +14,6 @@ export interface CreateExtensionAgentPayload {
   professional_info_verified: true;
   preferred_language?: 'en' | 'am';
 }
-
 export interface AdminGeographyOption {
   id: string;
   name_en: string;
@@ -42,6 +41,7 @@ export interface ExtensionAgentRecord {
   professional_info_verified_at: string | null;
   account_status: 'pending_activation' | 'active' | 'suspended';
   is_active: boolean;
+  preferred_language?: 'en' | 'am';
   created_at?: string | null;
 }
 
@@ -164,6 +164,24 @@ export const adminService = {
     if (Array.isArray(res)) return res;
     if (Array.isArray(res?.items)) return res.items;
     return [];
+  },
+
+  async updateExtensionAgent(
+    userId: string | number,
+    payload: Partial<CreateExtensionAgentPayload> & { is_active?: boolean },
+  ): Promise<any> {
+    return apiRequest(
+      `/api/admin/extension-agents/${encodeURIComponent(String(userId))}`,
+      { method: 'PATCH', body: payload },
+    );
+  },
+
+
+  async deleteExtensionAgent(userId: string | number): Promise<any> {
+    return apiRequest(
+      `/api/admin/extension-agents/${encodeURIComponent(String(userId))}`,
+      { method: 'DELETE' },
+    );
   },
 
   async updateUserStatus(userId: string | number, is_active: boolean): Promise<any> {

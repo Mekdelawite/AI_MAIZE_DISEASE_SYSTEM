@@ -50,6 +50,7 @@ class User(db.Model):
         index=True,
     )
 
+
     full_name = db.Column(
         db.String(150),
         nullable=False,

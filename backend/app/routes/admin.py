@@ -47,6 +47,12 @@ from backend.app.models.administrative_division import (
 )
 from backend.app.models.extension_agent import ExtensionAgent
 from backend.app.models.user import User
+from backend.app.models.extension_comment import ExtensionComment
+from backend.app.models.discussion_post import DiscussionPost
+from backend.app.models.discussion_reply import DiscussionReply
+from backend.app.models.offline_sync_record import OfflineSyncRecord
+from backend.app.models.diagnosis_record import DiagnosisRecord
+from backend.app.models.advisory_record import AdvisoryRecord
 
 from backend.app.routes.auth import roles_required
 
@@ -60,7 +66,6 @@ from backend.app.services.auth_service import (
     InvalidCredentialsError,
     UserAlreadyExistsError,
 )
-
 from backend.app.services.extension_agent_service import (
     ExtensionAgentAlreadyExistsError,
     ExtensionAgentService,
@@ -72,8 +77,6 @@ from backend.app.services.registration_otp_service import (
     RegistrationOTPDeliveryError,
     RegistrationOTPValidationError,
 )
-
-
 # =========================================================
 # BLUEPRINT
 # =========================================================
@@ -124,72 +127,6 @@ def error_response(
 # =========================================================
 # EXTENSION AGENT MANAGEMENT
 # =========================================================
-
-def _legacy_create_extension_agent():
-    """
-    Create a new extension-agent account and professional
-    extension-agent profile.
-    """
-
-    payload = request.get_json(silent=True) or {}
-
-    try:
-
-        user = ExtensionAgentService.create_agent(
-            phone_number=payload.get("phone_number"),
-            full_name=payload.get("full_name"),
-            password=payload.get("password"),
-            region=payload.get("region"),
-            woreda=payload.get("woreda"),
-            specialization=payload.get("specialization"),
-            certification_number=payload.get("certification_number"),
-            preferred_language=payload.get("preferred_language", "en"),
-        )
-
-        profile = ExtensionAgentService.get_agent_by_user_id(user.id)
-        agent = ExtensionAgentService.agent_to_dict(profile) if profile else None
-
-        return success_response(
-            agent,
-            201,
-        )
-
-    except UserAlreadyExistsError as exc:
-
-        return error_response(
-            "USER_ALREADY_EXISTS",
-            str(exc),
-            409,
-        )
-
-    except ExtensionAgentAlreadyExistsError as exc:
-
-        return error_response(
-            "EXTENSION_AGENT_ALREADY_EXISTS",
-            str(exc),
-            409,
-        )
-
-    except (AuthServiceError, ValueError) as exc:
-
-        return error_response(
-            "VALIDATION_ERROR",
-            str(exc),
-            400,
-        )
-
-    except Exception:
-
-        current_app.logger.exception(
-            "Failed to create extension agent."
-        )
-
-        return error_response(
-            "EXTENSION_AGENT_CREATE_ERROR",
-            "Unable to create extension agent.",
-            500,
-        )
-
 
 @admin_bp.post("/extension-agents")
 @jwt_required()
@@ -348,12 +285,14 @@ def get_extension_agents():
 def get_extension_agent_geography():
     level = request.args.get("level", "").strip().lower()
     parent_id = request.args.get("parent_id", "").strip()
+
     if level not in {"regions", "zones", "woredas"}:
         return error_response(
             "INVALID_GEOGRAPHY_LEVEL",
             "level must be regions, zones, or woredas.",
             400,
         )
+
     if level == "regions":
         rows = GeographyRegion.query.order_by(GeographyRegion.name_en).all()
         data = [
@@ -404,6 +343,7 @@ def get_extension_agent_geography():
             }
             for row in rows
         ]
+
     return success_response(data)
 
 
@@ -413,7 +353,12 @@ def get_extension_agent_geography():
 def resend_extension_agent_activation(user_id: int):
     profile = ExtensionAgentService.get_agent_by_user_id(user_id)
     if profile is None:
-        return error_response("EXTENSION_AGENT_NOT_FOUND", "Extension agent not found.", 404)
+        return error_response(
+            "EXTENSION_AGENT_NOT_FOUND",
+            "Extension agent not found.",
+            404,
+        )
+
     try:
         result = RegistrationOTPService.send_extension_agent_activation_code(
             user_id
@@ -426,9 +371,17 @@ def resend_extension_agent_activation(user_id: int):
             }
         )
     except RegistrationOTPCooldownError as exc:
-        return error_response("EXTENSION_AGENT_ACTIVATION_COOLDOWN", str(exc), 429)
+        return error_response(
+            "EXTENSION_AGENT_ACTIVATION_COOLDOWN",
+            str(exc),
+            429,
+        )
     except RegistrationOTPValidationError as exc:
-        return error_response("EXTENSION_AGENT_ACTIVATION_INVALID", str(exc), 400)
+        return error_response(
+            "EXTENSION_AGENT_ACTIVATION_INVALID",
+            str(exc),
+            400,
+        )
     except RegistrationOTPDeliveryError:
         current_app.logger.warning(
             "Could not resend activation code for extension agent %s.",
@@ -457,6 +410,7 @@ def resend_extension_agent_activation(user_id: int):
 def update_extension_agent_status(user_id: int):
     payload = request.get_json(silent=True)
     status = payload.get("account_status") if isinstance(payload, dict) else None
+
     try:
         result = AdminService.set_extension_agent_status(
             user_id,
@@ -481,6 +435,32 @@ def update_extension_agent_status(user_id: int):
         )
 
 
+@admin_bp.patch("/extension-agents/<int:user_id>")
+@jwt_required()
+@roles_required("admin")
+def update_extension_agent(user_id: int):
+    """Update an extension agent account and assigned area."""
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        profile = ExtensionAgentService.update_agent(user_id, payload)
+        return success_response(ExtensionAgentService.agent_to_dict(profile))
+    except ValueError as exc:
+        message = str(exc)
+        status = 404 if "not found" in message.lower() else 400
+        return error_response("EXTENSION_AGENT_UPDATE_ERROR", message, status)
+    except Exception:
+        current_app.logger.exception(
+            "Failed to update extension agent %s.",
+            user_id,
+        )
+        return error_response(
+            "EXTENSION_AGENT_UPDATE_ERROR",
+            "Unable to update extension agent.",
+            500,
+        )
+
+
 @admin_bp.patch("/extension-agents/<int:user_id>/assignment")
 @jwt_required()
 @roles_required("admin")
@@ -492,6 +472,7 @@ def transfer_extension_agent(user_id: int):
             "Request body must contain valid JSON.",
             400,
         )
+
     try:
         admin_id = int(get_jwt_identity())
         result = AdminService.transfer_extension_agent(
@@ -524,10 +505,69 @@ def transfer_extension_agent(user_id: int):
 def get_extension_agent_assignment_history(user_id: int):
     profile = ExtensionAgentService.get_agent_by_user_id(user_id)
     if profile is None:
-        return error_response("EXTENSION_AGENT_NOT_FOUND", "Extension agent not found.", 404)
+        return error_response(
+            "EXTENSION_AGENT_NOT_FOUND",
+            "Extension agent not found.",
+            404,
+        )
+
     return success_response(
         AdminService.get_extension_agent_assignment_history(user_id)
     )
+
+
+@admin_bp.delete("/extension-agents/<int:user_id>")
+@jwt_required()
+@roles_required("admin")
+def delete_extension_agent(user_id: int):
+    """Permanently delete an extension-agent account."""
+    user = User.query.filter_by(id=user_id, role="extension_agent").first()
+    if not user:
+        return error_response(
+            "EXTENSION_AGENT_NOT_FOUND",
+            "Extension agent was not found.",
+            404,
+        )
+
+    try:
+        # Remove authored material whose ownership cannot be left null.
+        DiscussionReply.query.filter_by(
+            extension_agent_id=user_id
+        ).delete(synchronize_session=False)
+        DiscussionPost.query.filter_by(
+            author_id=user_id
+        ).delete(synchronize_session=False)
+        ExtensionComment.query.filter_by(
+            extension_agent_id=user_id
+        ).delete(synchronize_session=False)
+        OfflineSyncRecord.query.filter_by(
+            user_id=user_id
+        ).delete(synchronize_session=False)
+        AdvisoryRecord.query.filter_by(
+            user_id=user_id
+        ).delete(synchronize_session=False)
+        DiagnosisRecord.query.filter_by(
+            user_id=user_id
+        ).delete(synchronize_session=False)
+        ExtensionAgent.query.filter_by(
+            user_id=user_id
+        ).delete(synchronize_session=False)
+
+        db.session.delete(user)
+        db.session.commit()
+        return success_response({"deleted": True, "user_id": user_id})
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            "Failed to delete extension agent %s.",
+            user_id,
+        )
+        return error_response(
+            "EXTENSION_AGENT_DELETE_ERROR",
+            "Unable to delete extension agent.",
+            500,
+        )
+
 
 
 # =========================================================

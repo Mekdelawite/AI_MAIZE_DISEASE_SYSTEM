@@ -436,98 +436,62 @@ class RegistrationOTPService:
                 f"Too many activation codes were sent. Try again in {remaining} seconds."
             )
 
-        code = cls._generate_otp()
-        activation.otp_hash = cls._hash_otp(code)
-        activation.otp_expires_at = now + timedelta(
-            minutes=cls.OTP_EXPIRES_MINUTES
-        )
-        activation.attempts = 0
-        activation.max_attempts = cls.MAX_ATTEMPTS
         activation.last_sent_at = now
         activation.resend_count += 1
+        activation.attempts = 0
+        activation.max_attempts = cls.MAX_ATTEMPTS
+        frontend_url = str(
+            current_app.config.get("ACTIVATION_FRONTEND_URL", "")
+        ).strip().rstrip("/")
+        if not frontend_url:
+            raise RegistrationOTPError(
+                "The frontend activation URL is not configured."
+            )
+
+        if activation.verification_method == "email":
+            if not agent.email:
+                raise RegistrationOTPValidationError("This extension-agent account has no registered email address.")
+            token = secrets.token_urlsafe(32)
+            activation.otp_hash = None
+            activation.otp_expires_at = None
+            activation.activation_token_hash = cls._hash_otp(token)
+            activation.activation_token_expires_at = now + timedelta(hours=24)
+            invitation_url = f"{frontend_url}/verify-extension-agent?token={token}"
+            try:
+                db.session.commit()
+                EmailService.send_email(
+                    recipient=agent.email,
+                    subject="Accept your MaizeCare extension-agent invitation",
+                    message=(f"Hello {user.full_name},\n\nAn administrator created a MaizeCare extension-agent account for you. Open the link below to accept the invitation and set your password. The link expires in 24 hours.\n\n{invitation_url}\n\nIf you did not expect this account, you can ignore this email."),
+                    html_message=("<html><body>" + f"<p>Hello {escape(user.full_name)},</p>" + "<p>An administrator created a MaizeCare extension-agent account for you. Accept the invitation and set your password using the link below. The link expires in 24 hours.</p>" + f'<p><a href="{escape(invitation_url, quote=True)}">Accept invitation and set password</a></p>' + "<p>If you did not expect this account, you can ignore this email.</p></body></html>"),
+                )
+            except Exception as exc:
+                if isinstance(exc, RegistrationOTPError): raise
+                raise RegistrationOTPDeliveryError("Unable to deliver the email invitation. An administrator can resend it.") from exc
+            return {"expires_in_seconds": 24 * 60 * 60, "resend_after_seconds": cls.RESEND_COOLDOWN_SECONDS}
+
+        if activation.verification_method != "sms":
+            raise RegistrationOTPError("The selected activation method is not supported.")
+        code = cls._generate_otp()
+        activation.otp_hash = cls._hash_otp(code)
+        activation.otp_expires_at = now + timedelta(minutes=cls.OTP_EXPIRES_MINUTES)
         activation.activation_token_hash = None
         activation.activation_token_expires_at = None
-
         try:
             db.session.commit()
-        except Exception as exc:
-            db.session.rollback()
-            raise RegistrationOTPError(
-                "Could not prepare the activation code."
-            ) from exc
-
-        activation_url = (
-            current_app.config.get(
-                "ACTIVATION_FRONTEND_URL",
-                "http://localhost:5173",
-            ).strip().rstrip("/")
-            + "/activate-extension-agent"
-        )
-
-        try:
-            if activation.verification_method == "email":
-                EmailService.send_email(
-                    recipient=agent.email or "",
-                    subject="MaizeCare extension-agent account activation",
-                    message=(
-                        f"Your MaizeCare extension-agent activation code is {code}.\n\n"
-                        f"Open this link to activate your account:\n"
-                        f"{activation_url}\n\n"
-                        f"The code expires in {cls.OTP_EXPIRES_MINUTES} minutes.\n"
-                        "Do not share this code with anyone."
-                    ),
-                    html_message=(
-                        "<html><body>"
-                        "<h2>MaizeCare Extension Agent Activation</h2>"
-                        "<p>Your activation code is:</p>"
-                        f"<h2>{escape(code)}</h2>"
-                        "<p>Open the following link to activate your account:</p>"
-                        f'<p><a href="{escape(activation_url, quote=True)}">'
-                        "Activate Extension Agent Account</a></p>"
-                        f"<p>Your code expires in {cls.OTP_EXPIRES_MINUTES} minutes.</p>"
-                        "<p>Do not share this code with anyone.</p>"
-                        "</body></html>"
-                    ),
-                )
-
-            elif activation.verification_method == "sms":
-                result = SMSService.send_sms(
-                    user.phone_number,
-                    (
-                        f"MaizeCare extension-agent activation code is {code}. "
-                        f"Expires in {cls.OTP_EXPIRES_MINUTES} minutes. "
-                        f"Activate: {activation_url}. "
-                        "Do not share this code."
-                    ),
-                    recipient_type="extension_agent",
-                    notification_type="extension_agent_activation",
-                    language=user.preferred_language,
-                    user_id=user.id,
-                    redact_message=True,
-                )
-
-                if not result.get("success"):
-                    raise RegistrationOTPDeliveryError(
-                        "The SMS provider did not accept the activation code."
-                    )
-
-            else:
-                raise RegistrationOTPError(
-                    "The selected activation method is not supported."
-                )
-
+            result = SMSService.send_sms(
+                user.phone_number,
+                f"MaizeCare extension-agent activation code is {code}. Expires in {cls.OTP_EXPIRES_MINUTES} minutes. Activate: {frontend_url}/activate-extension-agent. Do not share this code.",
+                recipient_type="extension_agent", notification_type="extension_agent_activation",
+                language=user.preferred_language, user_id=user.id, redact_message=True,
+            )
+            if not result.get("success"):
+                raise RegistrationOTPDeliveryError("The SMS provider did not accept the activation code.")
         except RegistrationOTPError:
             raise
         except Exception as exc:
-            raise RegistrationOTPDeliveryError(
-                "Unable to deliver the activation code. An administrator can resend it."
-            ) from exc
-
-        return {
-            "expires_in_seconds": cls.OTP_EXPIRES_MINUTES * 60,
-            "resend_after_seconds": cls.RESEND_COOLDOWN_SECONDS,
-        }
-
+            raise RegistrationOTPDeliveryError("Unable to deliver the activation code. An administrator can resend it.") from exc
+        return {"expires_in_seconds": cls.OTP_EXPIRES_MINUTES * 60, "resend_after_seconds": cls.RESEND_COOLDOWN_SECONDS}
 
     @classmethod
     def verify_extension_agent_activation_code(
@@ -628,7 +592,7 @@ class RegistrationOTPService:
         """Set the agent's password and atomically activate the account."""
         if not isinstance(activation_token, str) or not activation_token:
             raise RegistrationOTPValidationError(
-                "Verify the activation code before setting a password."
+                "Use the email invitation link or verify the SMS code before setting a password."
             )
         password = AuthService.validate_password(password)
         activation_hash = cls._hash_otp(activation_token)

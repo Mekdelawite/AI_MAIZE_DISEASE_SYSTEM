@@ -203,6 +203,11 @@ export const ExtensionAgentManagementPage: React.FC = () => {
   const [accountStatusFilter, setAccountStatusFilter] = useState('');
   const [verificationFilter, setVerificationFilter] = useState('');
   const [busyAgentId, setBusyAgentId] = useState<number | null>(null);
+  const [editingAgent, setEditingAgent] = useState<ExtensionAgentRecord | null>(null);
+  const [editFullName, setEditFullName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editLanguage, setEditLanguage] = useState<'en' | 'am'>('en');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [fullName, setFullName] = useState('');
@@ -308,9 +313,51 @@ export const ExtensionAgentManagementPage: React.FC = () => {
     setBusyAgentId(agent.agent_id);
     try {
       await adminService.resendExtensionAgentActivation(agent.agent_id);
-      notify('Activation code submitted for delivery.', 'success');
+      notify('Activation instructions submitted for delivery.', 'success');
     } catch (cause: unknown) {
       notify(cause instanceof Error ? cause.message : 'Could not resend activation code.', 'error');
+    } finally {
+      setBusyAgentId(null);
+    }
+  };
+
+  const openEditAgent = (agent: ExtensionAgentRecord) => {
+    setEditingAgent(agent);
+    setEditFullName(agent.full_name || '');
+    setEditPhone(agent.phone_number || '');
+    setEditLanguage(agent.preferred_language === 'am' ? 'am' : 'en');
+  };
+
+  const handleUpdateAgent = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingAgent) return;
+    setSavingEdit(true);
+    try {
+      await adminService.updateExtensionAgent(editingAgent.agent_id, {
+        full_name: editFullName.trim(),
+        phone_number: editPhone.trim(),
+        preferred_language: editLanguage,
+      });
+      notify('Extension-agent details updated.', 'success');
+      setEditingAgent(null);
+      await loadAgents();
+    } catch (cause: unknown) {
+      notify(cause instanceof Error ? cause.message : 'Could not update extension agent.', 'error');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleDeleteAgent = async (agent: ExtensionAgentRecord) => {
+    const confirmed = window.confirm('Delete ' + agent.full_name + '\'s extension-agent account and associated records? This cannot be undone.');
+    if (!confirmed) return;
+    setBusyAgentId(agent.agent_id);
+    try {
+      await adminService.deleteExtensionAgent(agent.agent_id);
+      notify('Extension-agent account deleted.', 'success');
+      await loadAgents();
+    } catch (cause: unknown) {
+      notify(cause instanceof Error ? cause.message : 'Could not delete extension agent.', 'error');
     } finally {
       setBusyAgentId(null);
     }
@@ -513,6 +560,7 @@ export const ExtensionAgentManagementPage: React.FC = () => {
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => openEditAgent(agent)} className="text-xs text-emerald-800 dark:text-emerald-400 hover:underline">Edit</button>
                         <button
                           type="button"
                           onClick={() => void openDetails(agent)}
@@ -534,7 +582,7 @@ export const ExtensionAgentManagementPage: React.FC = () => {
                             disabled={busyAgentId === agent.agent_id}
                             className="text-xs text-emerald-800 dark:text-emerald-400 hover:underline disabled:opacity-50"
                           >
-                            {busyAgentId === agent.agent_id ? 'Sending...' : 'Resend code'}
+                            {busyAgentId === agent.agent_id ? 'Sending...' : 'Resend invitation / code'}
                           </button>
                         )}
                         {agent.account_status === 'active' && (
@@ -557,7 +605,8 @@ export const ExtensionAgentManagementPage: React.FC = () => {
                             Reactivate
                           </button>
                         )}
-                      </div>
+
+                        <button type="button" onClick={() => void handleDeleteAgent(agent)} disabled={busyAgentId === agent.agent_id} className="text-xs text-red-700 dark:text-red-400 hover:underline disabled:opacity-50">Delete</button>                      </div>
                     </td>
                   </tr>
                 ))}
@@ -705,6 +754,18 @@ export const ExtensionAgentManagementPage: React.FC = () => {
                 {transferring ? 'Transferring...' : 'Confirm transfer'}
               </button>
             </div>
+          </form>
+        </div>
+      )}
+      {editingAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="edit-agent-title">
+          <form onSubmit={handleUpdateAgent} className="w-full max-w-lg space-y-4 rounded-xl bg-white p-6 shadow-xl dark:bg-[#121A16]">
+            <div className="flex items-center justify-between"><h3 id="edit-agent-title" className="text-base font-bold">Edit extension agent</h3><button type="button" onClick={() => setEditingAgent(null)} aria-label="Close"><X className="h-4 w-4" /></button></div>
+            <label className="block text-xs font-medium">Full name<input required maxLength={150} value={editFullName} onChange={(event) => setEditFullName(event.target.value)} className={inputClass + ' mt-1'} /></label>
+            <label className="block text-xs font-medium">Phone number<input required type="tel" value={editPhone} onChange={(event) => setEditPhone(event.target.value)} className={inputClass + ' mt-1'} /></label>
+            <label className="block text-xs font-medium">Preferred language<select value={editLanguage} onChange={(event) => setEditLanguage(event.target.value as 'en' | 'am')} className={inputClass + ' mt-1'}><option value="en">English</option><option value="am">አማርኛ</option></select></label>
+            <p className="text-xs text-stone-500">Change region, zone, or woreda with Transfer so assignment history stays accurate.</p>
+            <div className="flex justify-end gap-2"><button type="button" onClick={() => setEditingAgent(null)} className="rounded-lg bg-stone-100 px-4 py-2 text-xs dark:bg-stone-800">Cancel</button><button type="submit" disabled={savingEdit} className="rounded-lg bg-emerald-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">{savingEdit ? 'Saving...' : 'Save changes'}</button></div>
           </form>
         </div>
       )}

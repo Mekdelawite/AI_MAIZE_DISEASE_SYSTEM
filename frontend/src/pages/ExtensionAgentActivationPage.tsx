@@ -8,9 +8,12 @@ import { authService } from '../services/authService';
 export const ExtensionAgentActivationPage: React.FC = () => {
   const { notify } = useApp();
   const navigate = useNavigate();
+  const [isEmailInvitation] = useState(
+    () => Boolean(new URLSearchParams(window.location.search).get('token')),
+  );
   const [contact, setContact] = useState('');
   const [code, setCode] = useState('');
-  const [activationToken, setActivationToken] = useState<string | null>(null);
+  const [activationToken, setActivationToken] = useState<string | null>(() => new URLSearchParams(window.location.search).get('token'));
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -67,10 +70,14 @@ export const ExtensionAgentActivationPage: React.FC = () => {
       <div className="max-w-md mx-auto px-6 py-12 sm:py-16">
         <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#121A16] p-6 sm:p-8">
           <h1 className="text-xl font-bold text-stone-900 dark:text-stone-100 font-display">
-            Activate Extension Agent Account
+            {isEmailInvitation
+              ? 'Accept Email Invitation'
+              : 'Activate Extension Agent Account'}
           </h1>
           <p className="mt-2 text-xs leading-relaxed text-stone-600 dark:text-stone-400">
-            Enter the email address or phone number registered by your agricultural office and the code sent by the administrator.
+            {isEmailInvitation
+              ? 'You opened an email invitation. Create a password below to accept it; the server will verify the link. It expires after 24 hours, and no OTP is needed.'
+              : 'For SMS activation, enter the registered phone number and the six-digit code sent by the administrator. Email invitations use the link sent to your inbox instead.'}
           </p>
 
           {errorMessage && (
@@ -89,18 +96,18 @@ export const ExtensionAgentActivationPage: React.FC = () => {
           {!activationToken ? (
             <form onSubmit={handleVerifyCode} className="mt-6 space-y-4">
               <label className="block text-xs font-medium text-stone-700 dark:text-stone-300">
-                Registered email or phone number
+                Registered phone number
                 <input
-                  type="text"
+                  type="tel"
                   required
-                  autoComplete="email"
+                  autoComplete="tel"
                   value={contact}
                   onChange={(event) => setContact(event.target.value)}
                   className="mt-1 w-full px-3.5 py-2.5 text-sm rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
                 />
               </label>
               <label className="block text-xs font-medium text-stone-700 dark:text-stone-300">
-                One-time activation code
+                SMS activation code
                 <input
                   type="text"
                   inputMode="numeric"
@@ -113,12 +120,17 @@ export const ExtensionAgentActivationPage: React.FC = () => {
                   className="mt-1 w-full px-3.5 py-2.5 text-sm font-mono rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
                 />
               </label>
-              <button type="submit" disabled={loading} className="w-full py-2.5 px-4 text-sm font-semibold text-white bg-emerald-900 hover:bg-emerald-800 rounded-lg disabled:opacity-50">
+              <button type="submit" disabled={loading} className="w-full cursor-pointer rounded-lg bg-emerald-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
                 {loading ? 'Verifying code...' : 'Verify code'}
               </button>
             </form>
           ) : (
             <form onSubmit={handleSetPassword} className="mt-6 space-y-4">
+              <p className="rounded-lg bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+                {isEmailInvitation
+                  ? 'Email invitation link detected. Set a password to activate your account; the server checks the link and its 24-hour expiry.'
+                  : 'Your SMS code is verified. Set a password to activate your account.'}
+              </p>
               <label className="block text-xs font-medium text-stone-700 dark:text-stone-300">
                 Create password
                 <input
@@ -143,7 +155,7 @@ export const ExtensionAgentActivationPage: React.FC = () => {
                   className="mt-1 w-full px-3.5 py-2.5 text-sm rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
                 />
               </label>
-              <button type="submit" disabled={loading} className="w-full py-2.5 px-4 text-sm font-semibold text-white bg-emerald-900 hover:bg-emerald-800 rounded-lg disabled:opacity-50">
+              <button type="submit" disabled={loading} className="w-full cursor-pointer rounded-lg bg-emerald-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
                 {loading ? 'Activating account...' : 'Create password and activate'}
               </button>
             </form>

@@ -39,6 +39,37 @@ const ALLOWED_TYPES = [
 
 const ALLOWED_EXTENSIONS = /\.(jpe?g|png|webp)$/i;
 
+const LOCAL_RESULT_COPY = {
+  'Northern Leaf Blight': {
+    name: 'localDiseaseNlb',
+    signs: 'localSignsNlb',
+    context: 'localContextNlb',
+    action: 'localActionNlb',
+    prevention: 'localPreventionNlb',
+  },
+  'Common Rust': {
+    name: 'localDiseaseRust',
+    signs: 'localSignsRust',
+    context: 'localContextRust',
+    action: 'localActionRust',
+    prevention: 'localPreventionRust',
+  },
+  'Gray Leaf Spot': {
+    name: 'localDiseaseGray',
+    signs: 'localSignsGray',
+    context: 'localContextGray',
+    action: 'localActionGray',
+    prevention: 'localPreventionGray',
+  },
+  Healthy: {
+    name: 'localDiseaseHealthy',
+    signs: 'localSignsHealthy',
+    context: 'localContextHealthy',
+    action: 'localActionHealthy',
+    prevention: 'localPreventionHealthy',
+  },
+} as const;
+
 export default function DiagnosisPage() {
   const navigate = useNavigate();
   const { t, notify, language, isOnline, connectionStatus } = useApp();
@@ -801,26 +832,78 @@ export default function DiagnosisPage() {
             </button>
 
             {localResult && (
-              <section className="farmer-card bg-emerald-50/70 p-5 dark:border-emerald-900 dark:bg-emerald-950/20" aria-live="polite">
+              <section className="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/70 dark:bg-emerald-950/20 p-5" aria-live="polite">
+                {(() => {
+                  const resultCopy = LOCAL_RESULT_COPY[localResult.className];
+                  return (
+                    <>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">{t('localResultTitle')}</p>
                     <h2 className="mt-1 text-xl font-bold text-stone-900 dark:text-stone-100">
-                      {t(localResult.className === 'Northern Leaf Blight' ? 'aboutDiseaseNlb' : localResult.className === 'Common Rust' ? 'aboutDiseaseRust' : localResult.className === 'Gray Leaf Spot' ? 'aboutDiseaseGray' : 'aboutDiseaseHealthy')}
+                      {t(resultCopy.name)}
                     </h2>
                     <p className="mt-1 text-sm text-stone-700 dark:text-stone-300">{t('confidenceLabel')}: {(localResult.confidence * 100).toFixed(2)}%</p>
+                    <p className="mt-1 text-xs leading-relaxed text-stone-600 dark:text-stone-400">{t('localConfidenceNote')}</p>
                   </div>
                   <span className="rounded-full bg-amber-100 dark:bg-amber-900/50 px-3 py-1 text-xs font-semibold text-amber-900 dark:text-amber-200">
                     {t(diagnosisStatus === 'completed' ? 'syncCompleted' : 'savedLocallyWaiting')}
                   </span>
                 </div>
-                <ul className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-stone-700 dark:text-stone-300">
+
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  <div className="rounded-lg bg-white/80 p-4 dark:bg-stone-900/50">
+                    <h3 className="text-sm font-semibold text-stone-900 dark:text-stone-100">{t('localSignsHeading')}</h3>
+                    <p className="mt-1.5 text-sm leading-relaxed text-stone-700 dark:text-stone-300">{t(resultCopy.signs)}</p>
+                  </div>
+                  <div className="rounded-lg bg-white/80 p-4 dark:bg-stone-900/50">
+                    <h3 className="text-sm font-semibold text-stone-900 dark:text-stone-100">{t('localCauseConditionsHeading')}</h3>
+                    <p className="mt-1.5 text-sm leading-relaxed text-stone-700 dark:text-stone-300">{t(resultCopy.context)}</p>
+                  </div>
+                  <div className="rounded-lg bg-white/80 p-4 dark:bg-stone-900/50">
+                    <h3 className="text-sm font-semibold text-stone-900 dark:text-stone-100">{t('localManagementHeading')}</h3>
+                    <p className="mt-1.5 text-sm leading-relaxed text-stone-700 dark:text-stone-300">{t(resultCopy.action)}</p>
+                  </div>
+                  <div className="rounded-lg bg-white/80 p-4 dark:bg-stone-900/50">
+                    <h3 className="text-sm font-semibold text-stone-900 dark:text-stone-100">{t('localPreventionHeading')}</h3>
+                    <p className="mt-1.5 text-sm leading-relaxed text-stone-700 dark:text-stone-300">{t(resultCopy.prevention)}</p>
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-lg border border-emerald-200 bg-white/80 p-4 text-sm leading-relaxed text-stone-800 dark:border-emerald-900 dark:bg-stone-900/50 dark:text-stone-200">
+                  <h3 className="font-semibold">{t('localNextStepsHeading')}</h3>
+                  <ul className="mt-1.5 list-disc space-y-1 pl-5">
+                    <li>{t('localScoutAdvice')}</li>
+                    <li>{t('localSeekHelpAdvice')}</li>
+                  </ul>
+                </div>
+
+                <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-relaxed text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+                  {t('localPesticideCaution')}
+                </p>
+
+                <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm leading-relaxed text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100">
+                  <p className="font-semibold">{localResult.savedOffline ? t('localResultSaved') : t('localResultNotSaved')}</p>
+                  <p className="mt-1">{t('localResultServerNote')}</p>
+                </div>
+
+                <details className="mt-4 rounded-lg bg-white/70 px-4 py-3 dark:bg-stone-900/40">
+                  <summary className="cursor-pointer text-sm font-medium text-stone-800 dark:text-stone-200">{t('localScoresHeading')}</summary>
+                  <ul className="mt-3 grid grid-cols-1 gap-2 text-xs text-stone-700 dark:text-stone-300 sm:grid-cols-2">
                   {localResult.probabilities.map((probability, index) => {
-                    const labelKey = ['aboutDiseaseNlb', 'aboutDiseaseRust', 'aboutDiseaseGray', 'aboutDiseaseHealthy'][index];
+                    const labelKey = [
+                      LOCAL_RESULT_COPY['Northern Leaf Blight'].name,
+                      LOCAL_RESULT_COPY['Common Rust'].name,
+                      LOCAL_RESULT_COPY['Gray Leaf Spot'].name,
+                      LOCAL_RESULT_COPY.Healthy.name,
+                    ][index];
                     return <li key={labelKey} className="flex justify-between gap-3 rounded-md bg-white/70 dark:bg-stone-900/50 px-3 py-2"><span>{t(labelKey)}</span><strong>{(probability * 100).toFixed(2)}%</strong></li>;
                   })}
-                </ul>
-                <p className="mt-4 text-xs leading-relaxed text-stone-600 dark:text-stone-400">{t('localResultLimitations')}</p>
+                  </ul>
+                </details>
+                    </>
+                  );
+                })()}
               </section>
             )}
           </form>

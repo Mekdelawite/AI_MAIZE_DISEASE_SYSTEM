@@ -74,6 +74,10 @@ def create_app(
     config_class = get_config(environment)
 
     app.config.from_object(config_class)
+    if config_class.__name__ == "ProductionConfig":
+        config_class.validate_activation_frontend_url(
+            app.config.get("ACTIVATION_FRONTEND_URL", "")
+        )
 
     # =====================================================
     # CORS

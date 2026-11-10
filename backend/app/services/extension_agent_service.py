@@ -356,6 +356,7 @@ class ExtensionAgentService:
         phone_number: str,
         full_name: str,
         password: str,
+        email: str,
         region: str,
         woreda: str | None = None,
         specialization: str | None = None,
@@ -390,6 +391,11 @@ class ExtensionAgentService:
                 preferred_language
             )
         )
+        email = str(email or "").strip().lower()
+        if len(email) > 254 or "@" not in email or email.startswith("@") or email.endswith("@"):
+            raise ValueError("A valid email address is required for verification.")
+        if User.query.filter_by(email=email).first() is not None:
+            raise UserAlreadyExistsError("A user with this email address already exists.")
 
         # -------------------------------------------------
         # VALIDATE PROFESSIONAL INFORMATION
@@ -453,10 +459,11 @@ class ExtensionAgentService:
 
         user = User(
             phone_number=phone_number,
+            email=email,
             full_name=full_name,
             role="extension_agent",
             preferred_language=preferred_language,
-            is_active=True,
+            is_active=False,
         )
 
         user.set_password(password)
@@ -513,6 +520,7 @@ class ExtensionAgentService:
 
         required_fields = (
             "phone_number",
+            "email",
             "full_name",
             "password",
             "region",
@@ -534,6 +542,7 @@ class ExtensionAgentService:
             phone_number=payload["phone_number"],
             full_name=payload["full_name"],
             password=payload["password"],
+            email=payload["email"],
             region=payload["region"],
             woreda=payload.get("woreda"),
             specialization=payload.get("specialization"),
@@ -549,6 +558,44 @@ class ExtensionAgentService:
     # =====================================================
     # GET AGENT PROFILE
     # =====================================================
+
+    @staticmethod
+    def update_agent(user_id: int, payload: dict[str, Any]) -> ExtensionAgent:
+        """Update an extension agent's account and assigned area."""
+        agent = ExtensionAgentService.get_agent_by_user_id(user_id)
+        if not agent or not agent.user:
+            raise ValueError("Extension agent was not found.")
+
+        user = agent.user
+        if "full_name" in payload:
+            name = payload["full_name"]
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("Full name is required.")
+            if len(name.strip()) > 150:
+                raise ValueError("Full name must not exceed 150 characters.")
+            user.full_name = name.strip()
+
+        if "phone_number" in payload:
+            phone = payload["phone_number"]
+            if not isinstance(phone, str) or not phone.strip():
+                raise ValueError("Phone number is required.")
+            phone = phone.strip()
+            existing = User.query.filter(User.phone_number == phone, User.id != user.id).first()
+            if existing:
+                raise ValueError("That phone number is already registered.")
+            user.phone_number = phone
+
+        if "region" in payload or "zone" in payload or "woreda" in payload:
+            raise ValueError(
+                "Use the assignment-transfer action to change an agent's region, zone, or woreda."
+            )
+        if "preferred_language" in payload:
+            language = payload["preferred_language"]
+            if language not in {"en", "am"}:
+                raise ValueError("Preferred language must be en or am.")
+            user.preferred_language = language
+        db.session.commit()
+        return agent
 
     @staticmethod
     def get_agent_by_user_id(

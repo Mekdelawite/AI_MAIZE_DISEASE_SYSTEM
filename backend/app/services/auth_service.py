@@ -747,6 +747,11 @@ class AuthService:
 
         if not user.is_active:
 
+            if user.role == "extension_agent":
+                raise InactiveUserError(
+                    "Accept the activation invitation and set your password before signing in."
+                )
+
             raise InactiveUserError(
                 "This account is inactive."
             )

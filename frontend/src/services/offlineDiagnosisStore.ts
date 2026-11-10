@@ -184,6 +184,29 @@ export const offlineDiagnosisStore = {
     );
   },
 
+  async deleteForUser(userId: string | number): Promise<void> {
+    const db = await openDatabase();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction(STORE_NAME, 'readwrite');
+        const request = transaction.objectStore(STORE_NAME).openCursor();
+        request.onsuccess = () => {
+          const cursor = request.result;
+          if (!cursor) return;
+          const record = cursor.value as OfflineDiagnosisRecord;
+          if (String(record.user_id) === String(userId)) cursor.delete();
+          cursor.continue();
+        };
+        request.onerror = () => reject(request.error ?? new Error('Could not clear local diagnosis data.'));
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error ?? new Error('Could not clear local diagnosis data.'));
+        transaction.onabort = () => reject(transaction.error ?? new Error('Clearing local diagnosis data was aborted.'));
+      });
+    } finally {
+      db.close();
+    }
+  },
+
   async markSynced(operationId: string, serverResult?: unknown): Promise<void> {
     const db = await openDatabase();
 

@@ -27,6 +27,7 @@ export interface LocalDiagnosisResult {
   className: (typeof CLASS_NAMES)[number];
   confidence: number;
   probabilities: number[];
+  savedOffline: boolean;
 }
 
 async function readModelResource(
@@ -410,6 +411,7 @@ export const localDiagnosisService = {
         className: CLASS_NAMES[bestIndex],
         confidence: probabilities[bestIndex],
         probabilities,
+        savedOffline: false,
       };
 
       if (options.queueForSync ?? !navigator.onLine) {
@@ -428,6 +430,7 @@ export const localDiagnosisService = {
           explain: options.explain,
           createdAt: options.createdAt,
         });
+        result.savedOffline = true;
       }
 
       return result;
