@@ -45,7 +45,7 @@ class ExplainabilityService:
     to replace or extend the explainability method later.
     """
 
-    def __init__(self, adapter=None):
+    def __init__(self, adapter=None, model=None):
         """
         Initialize the explainability service.
 
@@ -61,7 +61,7 @@ class ExplainabilityService:
         self._adapter = (
             adapter
             if adapter is not None
-            else self._create_adapter()
+            else self._create_adapter(model=model)
         )
 
     # =====================================================
@@ -69,7 +69,7 @@ class ExplainabilityService:
     # =====================================================
 
     @staticmethod
-    def _create_adapter():
+    def _create_adapter(model=None):
         """
         Create the ExplainabilityAdapter.
 
@@ -83,7 +83,7 @@ class ExplainabilityService:
                 ExplainabilityAdapter
             )
 
-            return ExplainabilityAdapter()
+            return ExplainabilityAdapter(model=model)
 
         except Exception as error:
 

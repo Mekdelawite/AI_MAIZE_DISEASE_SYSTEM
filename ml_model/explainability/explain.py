@@ -59,6 +59,7 @@ class ExplainabilityService:
     def __init__(
         self,
         output_dir: Optional[Path] = None,
+        model=None,
     ):
         """
         Initialize the explainability service.
@@ -81,7 +82,7 @@ class ExplainabilityService:
         )
 
         # Initialize Grad-CAM once
-        self.gradcam = GradCAM()
+        self.gradcam = GradCAM(model=model)
 
         # Heatmap generator
         self.heatmap_generator = (

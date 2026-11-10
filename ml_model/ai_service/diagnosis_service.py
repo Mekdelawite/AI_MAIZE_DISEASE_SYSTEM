@@ -45,17 +45,25 @@ class DiagnosisService:
         Grad-CAM is initialized only when explicitly requested.
         """
 
-        self._predictor = (
-            predictor
-            if predictor is not None
-            else self._create_predictor()
-        )
+        self._predictor = predictor if predictor is not None else self._get_shared_predictor()
 
         # Lazy initialization: do not load Grad-CAM here.
         self._explainability_service = explainability_service
 
         # Prevent multiple simultaneous Grad-CAM initializations.
         self._explainability_lock = Lock()
+
+    _shared_predictor = None
+    _shared_predictor_lock = Lock()
+
+    @classmethod
+    def _get_shared_predictor(cls):
+        """Create the required predictor once per process, including retries."""
+        if cls._shared_predictor is None:
+            with cls._shared_predictor_lock:
+                if cls._shared_predictor is None:
+                    cls._shared_predictor = cls._create_predictor()
+        return cls._shared_predictor
 
     # =====================================================
     # PATH CONFIGURATION
@@ -126,21 +134,20 @@ class DiagnosisService:
                 f"Unable to initialize DiseasePredictor: {error}"
             ) from error
 
-    @classmethod
-    def _create_explainability_service(cls):
+    def _create_explainability_service(self):
         """
         Create the existing ExplainabilityService.
         Called only when Grad-CAM is requested.
         """
 
         try:
-            cls._configure_python_paths()
+            self._configure_python_paths()
 
             from explainability.explainability_service import (
                 ExplainabilityService,
             )
 
-            return ExplainabilityService()
+            return ExplainabilityService(model=self._predictor.model)
 
         except Exception as error:
             raise RuntimeError(

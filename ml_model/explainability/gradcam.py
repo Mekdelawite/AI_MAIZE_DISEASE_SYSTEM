@@ -59,6 +59,7 @@ class GradCAM:
         self,
         model_path: Optional[Path] = None,
         target_layer_name: str = TARGET_LAYER_NAME,
+        model=None,
     ):
         """
         Initialize the Grad-CAM engine.
@@ -81,7 +82,9 @@ class GradCAM:
 
         self.target_layer_name = target_layer_name
 
-        self.model = self._load_model()
+        # Reuse the inference model when supplied. Grad-CAM only needs a
+        # graph view of that model and does not require a second weight copy.
+        self.model = model if model is not None else self._load_model()
 
         self.target_layer = self._get_target_layer()
 

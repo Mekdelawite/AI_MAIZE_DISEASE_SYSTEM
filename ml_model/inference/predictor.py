@@ -93,6 +93,7 @@ class DiseasePredictor:
                 instance = super().__new__(cls)
 
                 instance._explainability_adapter = None
+                instance._explainability_lock = Lock()
 
                 instance._load_model()
 
@@ -164,48 +165,21 @@ class DiseasePredictor:
 
         try:
 
-            # -------------------------------------------------
-            # Find ml_model directory
-            # -------------------------------------------------
+            with self._explainability_lock:
+                if self._explainability_adapter is not None:
+                    return self._explainability_adapter
 
-            ml_model_dir = (
-                Path(__file__).resolve().parents[1]
-            )
+                ml_model_dir = Path(__file__).resolve().parents[1]
+                explainability_dir = ml_model_dir / "explainability"
+                explainability_path = str(explainability_dir)
+                if explainability_path not in sys.path:
+                    sys.path.insert(0, explainability_path)
 
-            explainability_dir = (
-                ml_model_dir / "explainability"
-            )
+                from explainability_adapter import ExplainabilityAdapter
 
-            # -------------------------------------------------
-            # Add explainability directory to sys.path
-            # -------------------------------------------------
-
-            explainability_path = str(
-                explainability_dir
-            )
-
-            if explainability_path not in sys.path:
-
-                sys.path.insert(
-                    0,
-                    explainability_path
+                self._explainability_adapter = ExplainabilityAdapter(
+                    model=self.model,
                 )
-
-            # -------------------------------------------------
-            # Import Grad-CAM adapter only when required
-            # -------------------------------------------------
-
-            from explainability_adapter import (
-                ExplainabilityAdapter
-            )
-
-            # -------------------------------------------------
-            # Initialize adapter
-            # -------------------------------------------------
-
-            self._explainability_adapter = (
-                ExplainabilityAdapter()
-            )
 
             print(
                 "Explainability adapter initialized."
