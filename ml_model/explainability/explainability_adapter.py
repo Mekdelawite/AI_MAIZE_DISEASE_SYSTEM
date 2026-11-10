@@ -26,13 +26,15 @@ class ExplainabilityAdapter:
     def __init__(
         self,
         output_dir: Optional[Path] = None,
+        model=None,
     ):
         """
         Initialize the explainability service.
         """
 
         self.service = ExplainabilityService(
-            output_dir=output_dir
+            output_dir=output_dir,
+            model=model,
         )
 
     # -----------------------------------------------------
